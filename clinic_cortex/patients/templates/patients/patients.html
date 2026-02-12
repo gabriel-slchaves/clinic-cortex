@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+
+<div class="relative min-h-screen overflow-hidden">
+
+    <!-- BACKGROUND -->
+    <div class="absolute inset-0 bg-gradient-to-br from-[#0c1f1b] via-black to-black"></div>
+    <div class="absolute top-0 left-0 w-[600px] h-[600px] bg-emerald-500/20 blur-[150px] rounded-full"></div>
+
+    <!-- CONTEÚDO -->
+    <div class="relative z-10 flex">
+        <!-- SIDEBAR -->
+        <aside class="w-72 min-h-screen bg-black/40 backdrop-blur-2xl border-r border-white/5 p-8">
+            <img src="{% static 'images/logo.png' %}" alt="ClinicCortex Logo" class="h-18 mb-12">
+            <nav class="flex flex-col gap-4">
+                <a href="#" class="px-4 py-3 rounded-lg hover:bg-emerald-800/40 transition">
+                    Pacientes
+                </a>
+                <a href="#" class="px-4 py-3 rounded-lg hover:bg-emerald-800/40 transition">
+                    Calendário
+                </a>
+                <a href="#" class="px-4 py-3 rounded-lg hover:bg-emerald-800/40 transition">
+                    Configurações
+                </a>
+            </nav>
+        </aside>
+
+        <!-- MAIN -->
+        <main class="flex-1 p-12">
+
+            <!-- HEADER -->
+            <div class="flex justify-between items-center mb-10">
+                <h2 class="text-3xl font-semibold tracking-tight">
+                    Pacientes
+                </h2>
+
+                <button class="bg-emerald-500 text-black px-6 py-3 rounded-xl font-medium hover:scale-105 transition">
+                    + Novo paciente
+                </button>
+            </div>
+
+            <!-- CARD -->
+            <div class="bg-white/5 backdrop-blur-2xl rounded-2xl border border-white/10 p-8 shadow-2xl">
+
+                <table class="w-full text-sm">
+                    <thead class="text-gray-400 border-b border-white/10">
+                        <tr>
+                            <th class="pb-4 text-left">Paciente</th>
+                            <th class="pb-4 text-left">Contato</th>
+                            <th class="pb-4 text-left">Próximo agendamento</th>
+                            <th class="pb-4 text-left">Status</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for patient in patients %}
+                        <tr class="border-b border-white/5 hover:bg-white/5 transition">
+                            <td class="py-6 flex items-center gap-4">
+                                <div class="w-10 h-10 bg-emerald-500 rounded-full"></div>
+                                <div>
+                                    <p class="font-medium">{{ patient.full_name }}</p>
+                                    <p class="text-xs text-gray-400">
+                                        {{ patient.birth_date|default:"—" }}
+                                    </p>
+                                </div>
+                            </td>
+
+                            <td>
+                                <p>{{ patient.phone }}</p>
+                                <p class="text-xs text-gray-400">{{ patient.email }}</p>
+                            </td>
+
+                            <td>
+                                {% if patient.appointments.last %}
+                                {{ patient.appointments.last.scheduled_at|date:"d/m/Y H:i" }}
+                                {% else %}
+                                —
+                                {% endif %}
+                            </td>
+
+                            <td>
+                                <span
+                                    class="px-4 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                    Ativo
+                                </span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="4" class="py-10 text-center text-gray-500">
+                                Nenhum paciente cadastrado ainda.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+            </div>
+
+        </main>
+    </div>
+</div>
+
+{% endblock %}
