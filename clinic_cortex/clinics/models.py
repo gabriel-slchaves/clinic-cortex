@@ -1,7 +1,6 @@
 from django.db import models
 from django.core.validators import RegexValidator
 
-
 class Clinic(models.Model):
     corporate_name = models.CharField(
         max_length=200,
@@ -46,3 +45,37 @@ class Clinic(models.Model):
         verbose_name = "Clínica"
         verbose_name_plural = "Clínicas"
         ordering = ['trade_name', 'corporate_name']
+
+class ClinicSettings(models.Model):
+    clinic = models.OneToOneField(
+        Clinic,
+        on_delete=models.CASCADE,
+        related_name="settings"
+    )
+
+    # Horário de funcionamento
+    start_time = models.TimeField(default="08:00")
+    end_time = models.TimeField(default="18:00")
+
+    # Intervalo (ex: almoço)
+    break_start = models.TimeField(null=True, blank=True)
+    break_end = models.TimeField(null=True, blank=True)
+
+    # Duração padrão das consultas (em minutos)
+    slot_duration = models.PositiveIntegerField(default=30)
+
+    # Permitir sábado/domingo
+    allow_weekends = models.BooleanField(default=False)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Configurações - {self.clinic.name}"
+
+# ⚠️ REGRA CRÍTICA DO SISTEMA:
+# Nenhum horário deve ser gerado ou validado manualmente.
+# Sempre consultar ClinicSettings para:
+# - horário inicial/final
+# - duração do slot
+# - intervalos bloqueados
+# - permissão de fim de semana

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="relative min-h-screen flex items-center justify-center">
+
+    <div class="bg-white/5 backdrop-blur-2xl border border-white/10 p-10 rounded-2xl w-full max-w-xl">
+
+        <h2 class="text-2xl mb-6 font-semibold text-white">
+            {{ view.object|yesno:"Editar Agendamento,Novo Agendamento" }}
+        </h2>
+
+        <form method="post" class="space-y-4 text-white">
+            {% csrf_token %}
+
+            <div class="space-y-6">
+
+                <!-- Paciente -->
+                <div>
+                    <label class="block mb-2 text-sm">Paciente</label>
+                    {{ form.patient }}
+                </div>
+
+                <!-- Médico -->
+                <div>
+                    <label class="block mb-2 text-sm">Médico</label>
+                    {{ form.doctor }}
+                </div>
+
+                <!-- Data e Hora -->
+                <div>
+                    <label class="block mb-2 text-sm">Data e Hora</label>
+                    <div class="grid grid-cols-2 gap-4">
+                        {{ form.scheduled_at }}
+                    </div>
+                </div>
+
+            </div>
+
+
+            <button type="submit"
+                class="bg-emerald-500 text-black px-6 py-2 rounded-lg mt-4 hover:scale-105 transition">
+                Salvar
+            </button>
+        </form>
+
+    </div>
+
+</div>
+
+<!-- Select2 CSS -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+
+<!-- jQuery (necessário para Select2) -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<!-- Select2 JS -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<script>
+    $(document).ready(function() {
+        $('#id_patient').select2({
+            placeholder: "Buscar paciente...",
+            width: '100%'
+        });
+
+        $('#id_doctor').select2({
+            placeholder: "Buscar médico...",
+            width: '100%'
+        });
+    });
+</script>
+
+<style>
+.select2-container--default .select2-selection--single {
+    background-color: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 0.75rem;
+    height: 48px;
+    padding: 10px;
+    color: white;
+}
+
+.select2-dropdown {
+    background-color: #0f172a;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.select2-results__option {
+    color: white;
+}
+
+.select2-results__option--highlighted {
+    background-color: #10b981 !important;
+    color: black !important;
+}
+</style>    
+
+{% endblock %}

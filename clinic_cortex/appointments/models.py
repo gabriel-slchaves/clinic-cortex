@@ -1,30 +1,35 @@
 from django.db import models
+from django.db.models import Q
 from clinics.models import Clinic
 from patients.models import Patient
-from django.conf import settings
+from doctors.models import DoctorProfile
 
 
 class Appointment(models.Model):
     clinic = models.ForeignKey(
         Clinic,
         on_delete=models.CASCADE,
-        related_name='appointments'
+        verbose_name="Clínica",
+        related_name='appointments',
     )
 
     patient = models.ForeignKey(
         Patient,
         on_delete=models.CASCADE,
+        verbose_name="Paciente",
         related_name='appointments'
     )
 
-    professional = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
+    doctor = models.ForeignKey(
+        DoctorProfile,
         on_delete=models.CASCADE,
+        verbose_name="Médico responsável",
         related_name='appointments'
     )
 
-    scheduled_date = models.DateTimeField()
-    
+    start_datetime = models.DateTimeField(verbose_name="Início da Consulta")
+    end_datetime = models.DateTimeField(verbose_name="Fim da Consulta")
+
     STATUS_CHOICES = (
         ('scheduled', 'Agendado'),
         ('done', 'Realizado'),
@@ -34,12 +39,40 @@ class Appointment(models.Model):
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
-        default='Agendado'
+        verbose_name="Status da consulta",
+        default='scheduled'
     )
 
-    def __str__(self):
-        return f"{self.patient} - {self.scheduled_date}"
+    def save(self, *args, **kwargs):
+        # 🔒 Garantia multi-tenant
+        if self.patient.clinic != self.clinic:
+            raise ValueError("Paciente não pertence a esta clínica")
 
-    class Meta: #Subclasse para definir METADADOS
+        if self.doctor.clinic != self.clinic:
+            raise ValueError("Médico não pertence a esta clínica")
+
+        # ⏱️ Validação temporal
+        if self.start_datetime >= self.end_datetime:
+            raise ValueError("Horário inválido.")
+
+        # 🚫 Verificação de conflito
+        conflict = Appointment.objects.filter(
+            doctor=self.doctor,
+            status='scheduled'
+        ).exclude(pk=self.pk).filter(
+            Q(start_datetime__lt=self.end_datetime) &
+            Q(end_datetime__gt=self.start_datetime)
+        ).exists()
+
+        if conflict:
+            raise ValueError("Já existe um agendamento nesse horário.")
+
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.patient} - {self.start_datetime}"
+
+    class Meta:
         verbose_name = "Agendamento"
         verbose_name_plural = "Agendamentos"
+        ordering = ['start_datetime']

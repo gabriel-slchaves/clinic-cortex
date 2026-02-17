@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="relative min-h-screen flex items-center justify-center">
+
+    <div class="bg-white/5 backdrop-blur-2xl border border-white/10 p-10 rounded-2xl w-full max-w-md text-center text-white">
+
+        <h2 class="text-xl mb-6">Excluir paciente?</h2>
+
+        <p class="mb-6">{{ object.full_name }}</p>
+
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit"
+                class="bg-red-600 text-white px-6 py-2 rounded-lg">
+                Confirmar exclusão
+            </button>
+        </form>
+
+    </div>
+
+</div>
+
+{% endblock %}

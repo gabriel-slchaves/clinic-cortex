@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+
+<div class="relative min-h-screen overflow-hidden">
+
+    <!-- BACKGROUND PREMIUM -->
+    <div class="absolute inset-0 bg-gradient-to-br from-[#071a16] via-black to-black"></div>
+    <div class="absolute top-0 left-0 w-[600px] h-[600px] bg-emerald-500/20 blur-[150px] rounded-full"></div>
+
+    <div class="relative z-10 p-12">
+
+        <!-- HEADER -->
+        <div class="flex justify-between items-center mb-10">
+
+            <div>
+                <h2 class="text-3xl font-semibold tracking-tight">
+                    Calendário
+                </h2>
+                <p class="text-gray-400 text-sm mt-1">
+                    Visualize e gerencie os agendamentos da clínica
+                </p>
+            </div>
+
+            <a href="{% url 'appointment_create' %}"
+               class="bg-emerald-500 text-black px-6 py-3 rounded-xl font-medium 
+                      hover:scale-105 hover:shadow-lg hover:shadow-emerald-500/30 
+                      transition-all duration-300">
+                + Novo Agendamento
+            </a>
+
+        </div>
+
+        <!-- CALENDAR CARD -->
+        <div class="bg-white/5 backdrop-blur-2xl rounded-2xl border border-white/10 p-8 shadow-2xl">
+
+            <div id="calendar"></div>
+
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    const calendarEl = document.getElementById('calendar');
+
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+
+        initialView: 'dayGridMonth',
+
+        height: 'auto',
+
+        headerToolbar: {
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,timeGridDay'
+        },
+
+        buttonText: {
+            today: 'Hoje',
+            month: 'Mês',
+            week: 'Semana',
+            day: 'Dia'
+        },
+
+        events: '/appointments/events/',
+
+        eventClassNames: function(arg) {
+            return ['rounded-xl','border-0','shadow-md'];
+        },
+
+        eventDidMount: function(info) {
+            info.el.style.backgroundColor = info.event.extendedProps.color;
+        }
+
+    });
+
+    calendar.render();
+
+});
+</script>
+
+<style>
+.fc {
+    color: #fff;
+}
+
+.fc-toolbar-title {
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.fc-button {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #fff;
+    border-radius: 10px;
+    padding: 6px 12px;
+    transition: all 0.2s ease;
+}
+
+.fc-button:hover {
+    background: rgba(16,185,129,0.4);
+    border-color: #10b981;
+}
+
+.fc-daygrid-day {
+    background: rgba(255,255,255,0.02);
+}
+
+.fc-daygrid-event {
+    padding: 4px 6px;
+    font-size: 0.75rem;
+}
+</style>
+
+{% endblock %}

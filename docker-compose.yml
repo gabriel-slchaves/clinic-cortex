@@ -1,0 +1,39 @@
+version: '3.9'
+
+services:
+  # Banco de dados PostgreSQL
+  db:
+    image: postgres:15
+    container_name: cliniccortex_db
+    restart: always
+    environment:
+      POSTGRES_USER: clinicuser
+      POSTGRES_PASSWORD: clinicpass
+      POSTGRES_DB: cliniccortex
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  # Aplicação Django
+  web:
+    build:
+      context: .
+    container_name: cliniccortex_web
+    # Comando principal do Django
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app            # mapeia código local para o container
+      - ./static:/app/static
+    ports:
+      - "8000:8000"       # acesse pelo navegador: http://localhost:8000 ou VPS_IP:8000
+    environment:
+      # Variáveis de ambiente para dev ou MVP inicial
+      - DEBUG=True
+      - DJANGO_SECRET_KEY=dev-secret-key
+      - DATABASE_URL=postgres://clinicuser:clinicpass@db:5432/cliniccortex
+    depends_on:
+      - db
+
+volumes:
+  db_data:               # mantém os dados do PostgreSQL persistentes

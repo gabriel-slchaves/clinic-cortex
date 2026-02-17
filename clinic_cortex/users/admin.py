@@ -2,13 +2,32 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import User
 
+
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    list_display = ('id', 'username', 'email', 'clinic', 'is_staff', 'is_active')
-    list_filter = ('clinic', 'is_staff', 'is_active')
-    search_fields = ('username', 'email')
-    ordering = ('username',)
+
+    model = User
+
+    list_display = (
+        'id',
+        'username',
+        'first_name',
+        'last_name',
+        'email',
+        'role',
+        'clinic',
+        'is_staff',
+    )
+
 
     fieldsets = UserAdmin.fieldsets + (
-        ('Clínica', {'fields': ('clinic',)}),
+        ('Informações adicionais', {
+            'fields': ('role', 'clinic')
+        }),
+    )
+
+    add_fieldsets = UserAdmin.add_fieldsets + (
+        ('Informações adicionais', {
+            'fields': ('role', 'clinic')
+        }),
     )
