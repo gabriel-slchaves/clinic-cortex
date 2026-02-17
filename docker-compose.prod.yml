@@ -1,36 +1,22 @@
-name: cliniccortex-dev-stack
+name: cliniccortex
 
 services:
   app:
-    container_name: cliniccortex-dev
+    container_name: cliniccortex
     build:
       context: .
-      target: dev
-    command: >
-      sh -c "pnpm install --frozen-lockfile && pnpm dev --host 0.0.0.0 --port 3000"
+      target: runtime
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+    ports:
+      - "${APP_PORT:-3000}:80"
     depends_on:
       - whatsapp-connector
-    ports:
-      - "3000:3000"
-    environment:
-      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
-      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
-      WHATSAPP_API_PROXY_TARGET: http://whatsapp-connector:3001
-      # Better file watching inside Docker (esp. on Windows/macOS)
-      CHOKIDAR_USEPOLLING: "true"
-      CHOKIDAR_INTERVAL: "120"
-    volumes:
-      - ./src:/app/src
-      - ./index.html:/app/index.html
-      - ./vite.config.ts:/app/vite.config.ts
-      - ./tsconfig.json:/app/tsconfig.json
-      - ./tsconfig.node.json:/app/tsconfig.node.json
-      - ./package.json:/app/package.json
-      - ./pnpm-lock.yaml:/app/pnpm-lock.yaml
-      - node_modules:/app/node_modules
+    restart: unless-stopped
 
   n8n:
-    container_name: cliniccortex-n8n-dev
+    container_name: cliniccortex-n8n
     image: n8nio/n8n:latest
     ports:
       - "${N8N_PORT:-5678}:5678"
@@ -46,15 +32,13 @@ services:
       - n8n_data:/home/node/.n8n
 
   whatsapp-connector:
-    container_name: cliniccortex-whatsapp-dev
+    container_name: cliniccortex-whatsapp
     build:
       context: .
       dockerfile: whatsapp-service/Dockerfile
-      target: dev
+      target: runtime
     depends_on:
       - n8n
-    ports:
-      - "${WHATSAPP_SERVICE_PORT:-3001}:3001"
     environment:
       SUPABASE_URL: ${VITE_SUPABASE_URL}
       SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
@@ -64,15 +48,10 @@ services:
       N8N_MESSAGE_WEBHOOK_URL: ${N8N_MESSAGE_WEBHOOK_URL:-http://n8n:5678/webhook/cliniccortex-whatsapp}
       N8N_MESSAGE_WEBHOOK_TIMEOUT_MS: ${N8N_MESSAGE_WEBHOOK_TIMEOUT_MS:-15000}
       N8N_MESSAGE_WEBHOOK_SECRET: ${N8N_MESSAGE_WEBHOOK_SECRET:-}
+    restart: unless-stopped
     volumes:
-      - .:/app
-      - node_modules:/app/node_modules
       - whatsapp_sessions:/data/sessions
 
 volumes:
-  node_modules:
-    name: cliniccortex_node_modules
   n8n_data:
-    name: cliniccortex_n8n_data
   whatsapp_sessions:
-    name: cliniccortex_whatsapp_sessions

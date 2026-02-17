@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+  <meta name="description"
+    content="ClinicCortex — O Sistema Operacional Inteligente para Clínicas Modernas. CRM médico, agenda automatizada, analytics avançado e gestão operacional em uma única plataforma." />
+  <meta name="theme-color" content="#012611" />
+  <title>ClinicCortex — The Intelligent Operating System for Modern Clinics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet" />
+  <script>
+    (() => {
+      const fallback = "light";
+      try {
+        const stored = localStorage.getItem("cc_theme");
+        const theme = stored === "light" || stored === "dark" || stored === "forest" || stored === "emerald" ? stored : fallback;
+        const isDark = theme === "dark" || theme === "forest";
+        document.documentElement.classList.toggle("dark", isDark);
+        document.documentElement.setAttribute("data-cc-theme", theme);
+        document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+      } catch {
+        document.documentElement.classList.remove("dark");
+        document.documentElement.setAttribute("data-cc-theme", fallback);
+        document.documentElement.style.colorScheme = "light";
+      }
+    })();
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+  <!-- Umami (opcional): descomente e substitua os valores abaixo -->
+  <!-- <script defer src="https://analytics.example.com/umami" data-website-id="YOUR_WEBSITE_ID"></script> -->
+</body>
+
+</html>

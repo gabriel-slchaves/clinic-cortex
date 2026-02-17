@@ -1,0 +1,19 @@
+node_modules
+dist
+build
+coverage
+.git
+.vscode
+.idea
+.DS_Store
+
+# local env (Vite replaces at build time)
+.env
+.env.*
+!.env.example
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
