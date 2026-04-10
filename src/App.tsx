@@ -22,6 +22,7 @@ import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import Services from "./pages/Services";
 import Signup from "./pages/Signup";
+import WhatsAppMetaCallback from "./pages/WhatsAppMetaCallback";
 
 function AppRedirect({
   to,
@@ -48,7 +49,12 @@ function ProtectedRoute({
   const { user, loading } = useAuth();
 
   if (loading) {
-    return <GateLoader title="Carregando…" subtitle="Só um instante para entrar no sistema." />;
+    return (
+      <GateLoader
+        title="Carregando…"
+        subtitle="Só um instante para entrar no sistema."
+      />
+    );
   }
 
   if (!user) {
@@ -73,7 +79,9 @@ function GateLoader({
       <div className="w-full max-w-md relative z-10">
         <div className="bg-[var(--cc-bg-white)] border border-[var(--cc-border)] rounded-3xl p-8 shadow-[0_10px_40px_rgba(2,89,64,0.05)]">
           <div className="w-10 h-10 mx-auto mb-5 rounded-full border-2 border-[var(--cc-tertiary)] border-t-transparent animate-spin" />
-          <p className="font-['Syne'] font-800 text-[var(--cc-primary)] text-lg">{title}</p>
+          <p className="font-['Syne'] font-800 text-[var(--cc-primary)] text-lg">
+            {title}
+          </p>
           <p className="mt-2 text-[13px] text-[var(--cc-text-muted)] opacity-70 font-['Space_Grotesk']">
             {subtitle}
           </p>
@@ -100,7 +108,12 @@ function ProtectedOnboardedRoute({
   }, [entryQuery.data]);
 
   if (loading) {
-    return <GateLoader title="Carregando…" subtitle="Só um instante para entrar no sistema." />;
+    return (
+      <GateLoader
+        title="Carregando…"
+        subtitle="Só um instante para entrar no sistema."
+      />
+    );
   }
 
   if (!user) {
@@ -108,7 +121,12 @@ function ProtectedOnboardedRoute({
   }
 
   if (entryQuery.isLoading && !entryQuery.data) {
-    return <GateLoader title="Carregando…" subtitle="Só um instante para entrar no sistema." />;
+    return (
+      <GateLoader
+        title="Carregando…"
+        subtitle="Só um instante para entrar no sistema."
+      />
+    );
   }
 
   if (entryQuery.error) {
@@ -118,7 +136,9 @@ function ProtectedOnboardedRoute({
           <p className="text-[var(--cc-text-primary)] font-['Syne'] font-700 text-lg">
             Não foi possível abrir sua conta
           </p>
-          <p className="text-[var(--cc-text-muted)] mt-2 text-sm">Não foi possível carregar sua conta. Tente novamente.</p>
+          <p className="text-[var(--cc-text-muted)] mt-2 text-sm">
+            Não foi possível carregar sua conta. Tente novamente.
+          </p>
         </div>
       </div>
     );
@@ -140,7 +160,12 @@ function AppIndex() {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return <GateLoader title="Carregando…" subtitle="Só um instante para entrar no sistema." />;
+    return (
+      <GateLoader
+        title="Carregando…"
+        subtitle="Só um instante para entrar no sistema."
+      />
+    );
   }
 
   if (!user) {
@@ -176,6 +201,10 @@ function PublicRouter() {
       <Route path="/configuracoes" component={RedirectToApp} />
       <Route path="/onboarding" component={RedirectToApp} />
       <Route path="/onboarding/:step" component={RedirectToApp} />
+      <Route
+        path="/integrations/whatsapp/meta/callback"
+        component={WhatsAppMetaCallback}
+      />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -216,6 +245,10 @@ function AppRouter() {
       <Route path="/onboarding/:step">
         <ProtectedRoute component={Onboarding} />
       </Route>
+      <Route
+        path="/integrations/whatsapp/meta/callback"
+        component={WhatsAppMetaCallback}
+      />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -223,7 +256,8 @@ function AppRouter() {
 }
 
 function Router() {
-  const isApp = typeof window !== "undefined" && isAppHostname(window.location.hostname);
+  const isApp =
+    typeof window !== "undefined" && isAppHostname(window.location.hostname);
   return isApp ? <AppRouter /> : <PublicRouter />;
 }
 

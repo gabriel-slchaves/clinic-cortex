@@ -24,7 +24,13 @@ import Step7Launch from "@/pages/onboarding/Step7Launch";
 
 type Plan = "essencial" | "professional";
 
-function CenteredStatusCard({ title, subtitle }: { title: string; subtitle: string }) {
+function CenteredStatusCard({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle: string;
+}) {
   return (
     <div className="min-h-screen bg-[var(--cc-bg-base)] text-[var(--cc-text-body)] flex items-center justify-center px-4 relative overflow-hidden text-center">
       <div className="absolute top-0 -left-10 w-72 h-72 bg-[#23D996]/10 rounded-full blur-3xl" />
@@ -38,7 +44,9 @@ function CenteredStatusCard({ title, subtitle }: { title: string; subtitle: stri
           className="bg-[var(--cc-bg-white)] border border-[var(--cc-border)] rounded-3xl p-8 shadow-[0_10px_40px_rgba(2,89,64,0.05)]"
         >
           <div className="w-10 h-10 mx-auto mb-5 rounded-full border-2 border-[var(--cc-tertiary)] border-t-transparent animate-spin" />
-          <p className="font-['Syne'] font-800 text-[var(--cc-primary)] text-lg">{title}</p>
+          <p className="font-['Syne'] font-800 text-[var(--cc-primary)] text-lg">
+            {title}
+          </p>
           <p className="mt-2 text-[13px] text-[var(--cc-text-muted)] opacity-70 font-['Space_Grotesk']">
             {subtitle}
           </p>
@@ -53,7 +61,8 @@ export default function Onboarding() {
   const userId = user?.id || null;
   const [match, params] = useRoute("/onboarding/:step");
   const stepFromUrl = match ? Number(params?.step || 1) : 1;
-  const currentStep = Number.isFinite(stepFromUrl) && stepFromUrl > 0 ? stepFromUrl : 1;
+  const currentStep =
+    Number.isFinite(stepFromUrl) && stepFromUrl > 0 ? stepFromUrl : 1;
   const hasEditedPlanRef = useRef(false);
   const hasBootstrappedRef = useRef(false);
 
@@ -100,18 +109,23 @@ export default function Onboarding() {
   useEffect(() => {
     // Prefill from auth metadata or local pending value.
     try {
-      const pending = window.localStorage.getItem("cc_pending_whatsapp_e164") || "";
-      const meta = (user as any)?.user_metadata?.whatsapp_e164 as string | undefined;
+      const pending =
+        window.localStorage.getItem("cc_pending_whatsapp_e164") || "";
+      const meta = (user as any)?.user_metadata?.whatsapp_e164 as
+        | string
+        | undefined;
       const e164 = (meta || pending || "").trim();
       if (e164.startsWith("+55")) {
         const next = digitsOnly(e164).slice(2, 13);
-        setWhatsappDigits((prev) => (digitsOnly(prev).length ? prev : next));
+        setWhatsappDigits(prev => (digitsOnly(prev).length ? prev : next));
       }
     } catch {
       // ignore
     }
     try {
-      const fullName = (user as any)?.user_metadata?.full_name as string | undefined;
+      const fullName = (user as any)?.user_metadata?.full_name as
+        | string
+        | undefined;
       const n = String(fullName || "").trim();
       if (n && !clinicName.trim()) {
         // Prefill as "Clínica <nome>" (but avoid double prefix).
@@ -144,7 +158,9 @@ export default function Onboarding() {
         // If there is more than one clinic, prefer the owner clinic.
         let preferredCid = "";
         try {
-          preferredCid = (window.localStorage.getItem("cc_clinic_id") || "").trim();
+          preferredCid = (
+            window.localStorage.getItem("cc_clinic_id") || ""
+          ).trim();
         } catch {
           preferredCid = "";
         }
@@ -152,7 +168,9 @@ export default function Onboarding() {
         const loadClinic = async (cid: string) => {
           const { data: clinic, error } = await supabase
             .from("clinics")
-            .select("id,onboarding_step,onboarding_completed_at,name,phone,desired_plan")
+            .select(
+              "id,onboarding_step,onboarding_completed_at,name,phone,desired_plan"
+            )
             .eq("id", cid)
             .limit(1)
             .maybeSingle();
@@ -181,14 +199,19 @@ export default function Onboarding() {
           if (cancelled) return;
           if (error) return;
           const preferredMembership =
-            ((memberships as any[]) || []).find((row) => String(row?.role || "").trim().toLowerCase() === "owner") ||
+            ((memberships as any[]) || []).find(
+              row =>
+                String(row?.role || "")
+                  .trim()
+                  .toLowerCase() === "owner"
+            ) ||
             ((memberships as any[]) || [])[0] ||
             null;
           cid = (preferredMembership?.clinic_id as string | undefined) || "";
           if (!cid) {
             try {
               window.localStorage.removeItem("cc_clinic_id");
-            } catch { }
+            } catch {}
             setClinicId(null);
             return;
           }
@@ -209,17 +232,22 @@ export default function Onboarding() {
 
         if (cancelled) return;
 
-        const existingName = ((clinic as any)?.name as string | null | undefined) || "";
+        const existingName =
+          ((clinic as any)?.name as string | null | undefined) || "";
         if (existingName) {
-          setClinicName((prev) => (prev?.trim() ? prev : existingName));
+          setClinicName(prev => (prev?.trim() ? prev : existingName));
         }
-        const existingPhone = ((clinic as any)?.phone as string | null | undefined) || "";
+        const existingPhone =
+          ((clinic as any)?.phone as string | null | undefined) || "";
         if (existingPhone) {
           let d = digitsOnly(existingPhone);
           if (d.startsWith("55") && d.length > 11) d = d.slice(2);
-          setWhatsappDigits((prev) => (digitsOnly(prev).length ? prev : d.slice(0, 11)));
+          setWhatsappDigits(prev =>
+            digitsOnly(prev).length ? prev : d.slice(0, 11)
+          );
         }
-        const existingPlan = ((clinic as any)?.desired_plan as Plan | null | undefined) || null;
+        const existingPlan =
+          ((clinic as any)?.desired_plan as Plan | null | undefined) || null;
         if (
           !hasEditedPlanRef.current &&
           (existingPlan === "essencial" || existingPlan === "professional")
@@ -286,7 +314,8 @@ export default function Onboarding() {
           .eq("id", clinicId);
 
         if (updateError) {
-          if (import.meta.env.DEV) console.warn("[Onboarding] update clinic error:", updateError);
+          if (import.meta.env.DEV)
+            console.warn("[Onboarding] update clinic error:", updateError);
           setError("Não foi possível atualizar sua clínica. Tente novamente.");
           setLoading(false);
           return;
@@ -307,8 +336,11 @@ export default function Onboarding() {
       });
 
       if (error) {
-        if (import.meta.env.DEV) console.warn("[Onboarding] create_clinic error:", error);
-        setError("Não foi possível criar sua clínica. Tente novamente em instantes.");
+        if (import.meta.env.DEV)
+          console.warn("[Onboarding] create_clinic error:", error);
+        setError(
+          "Não foi possível criar sua clínica. Tente novamente em instantes."
+        );
         setLoading(false);
         return;
       }
@@ -334,7 +366,9 @@ export default function Onboarding() {
       navigateToAppPath("/onboarding/2");
     } catch (err) {
       if (import.meta.env.DEV) console.error("[Onboarding] error:", err);
-      setError("Não foi possível concluir o onboarding. Tente novamente em instantes.");
+      setError(
+        "Não foi possível concluir o onboarding. Tente novamente em instantes."
+      );
       setLoading(false);
     }
   };
@@ -367,7 +401,7 @@ export default function Onboarding() {
         clinicName={clinicName}
         onBack={() => navigateToAppPath("/onboarding/1")}
         onDone={() => {
-          setOnboardingStep((prev) => Math.max(prev, 3));
+          setOnboardingStep(prev => Math.max(prev, 3));
           navigateToAppPath("/onboarding/3");
         }}
       />
@@ -381,7 +415,10 @@ export default function Onboarding() {
       return null;
     }
     return (
-      <CenteredStatusCard title="Carregando sua clínica…" subtitle="Só um instante para abrir a etapa 2." />
+      <CenteredStatusCard
+        title="Carregando sua clínica…"
+        subtitle="Só um instante para abrir a etapa 2."
+      />
     );
   }
 
@@ -393,7 +430,7 @@ export default function Onboarding() {
         persistedStep={onboardingStep}
         onBack={() => navigateToAppPath("/onboarding/2")}
         onDone={() => {
-          setOnboardingStep((prev) => Math.max(prev, 4));
+          setOnboardingStep(prev => Math.max(prev, 4));
           navigateToAppPath("/onboarding/4");
         }}
       />
@@ -407,7 +444,10 @@ export default function Onboarding() {
       return null;
     }
     return (
-      <CenteredStatusCard title="Carregando sua clínica…" subtitle="Só um instante para abrir a etapa 3." />
+      <CenteredStatusCard
+        title="Carregando sua clínica…"
+        subtitle="Só um instante para abrir a etapa 3."
+      />
     );
   }
 
@@ -419,7 +459,7 @@ export default function Onboarding() {
         persistedStep={onboardingStep}
         onBack={() => navigateToAppPath("/onboarding/3")}
         onDone={() => {
-          setOnboardingStep((prev) => Math.max(prev, 5));
+          setOnboardingStep(prev => Math.max(prev, 5));
           navigateToAppPath("/onboarding/5");
         }}
       />
@@ -431,7 +471,10 @@ export default function Onboarding() {
       return null;
     }
     return (
-      <CenteredStatusCard title="Carregando sua clínica…" subtitle="Só um instante para abrir a etapa 4." />
+      <CenteredStatusCard
+        title="Carregando sua clínica…"
+        subtitle="Só um instante para abrir a etapa 4."
+      />
     );
   }
 
@@ -443,7 +486,7 @@ export default function Onboarding() {
         persistedStep={onboardingStep}
         onBack={() => navigateToAppPath("/onboarding/4")}
         onDone={() => {
-          setOnboardingStep((prev) => Math.max(prev, 6));
+          setOnboardingStep(prev => Math.max(prev, 6));
           navigateToAppPath("/onboarding/6");
         }}
       />
@@ -457,7 +500,10 @@ export default function Onboarding() {
       return null;
     }
     return (
-      <CenteredStatusCard title="Carregando sua clínica…" subtitle="Só um instante para abrir a etapa 5." />
+      <CenteredStatusCard
+        title="Carregando sua clínica…"
+        subtitle="Só um instante para abrir a etapa 5."
+      />
     );
   }
 
@@ -469,7 +515,7 @@ export default function Onboarding() {
         persistedStep={onboardingStep}
         onBack={() => navigateToAppPath("/onboarding/5")}
         onDone={() => {
-          setOnboardingStep((prev) => Math.max(prev, 7));
+          setOnboardingStep(prev => Math.max(prev, 7));
           navigateToAppPath("/onboarding/7");
         }}
       />
@@ -481,7 +527,10 @@ export default function Onboarding() {
       return null;
     }
     return (
-      <CenteredStatusCard title="Carregando sua clínica…" subtitle="Só um instante para abrir a etapa 6." />
+      <CenteredStatusCard
+        title="Carregando sua clínica…"
+        subtitle="Só um instante para abrir a etapa 6."
+      />
     );
   }
 
@@ -493,7 +542,7 @@ export default function Onboarding() {
         persistedStep={onboardingStep}
         onBack={() => navigateToAppPath("/onboarding/6")}
         onDone={() => {
-          setOnboardingStep((prev) => Math.max(prev, 7));
+          setOnboardingStep(prev => Math.max(prev, 7));
           navigateToAppPath("/dashboard");
         }}
       />
@@ -505,7 +554,10 @@ export default function Onboarding() {
       return null;
     }
     return (
-      <CenteredStatusCard title="Carregando sua clínica…" subtitle="Só um instante para abrir a etapa 7." />
+      <CenteredStatusCard
+        title="Carregando sua clínica…"
+        subtitle="Só um instante para abrir a etapa 7."
+      />
     );
   }
 
@@ -546,205 +598,224 @@ export default function Onboarding() {
             Comece sem pagar nada
           </h2>
           <p className="text-center text-[13px] text-[#005C41] font-['Space_Grotesk'] opacity-70 mb-6">
-            Crie sua conta e junte-se a centenas de clínicas que utilizam a precisão clínica para escalar operações.
+            Crie sua conta e junte-se a centenas de clínicas que utilizam a
+            precisão clínica para escalar operações.
           </p>
 
           <form onSubmit={onSubmit} className="space-y-4">
-              <div>
-                <label
-                  htmlFor="clinic-name"
-                  className="block text-[13px] font-['Space_Grotesk'] font-700 text-[#005C41] opacity-70 mb-2 uppercase tracking-wider"
-                >
-                  Nome da clínica
-                </label>
+            <div>
+              <label
+                htmlFor="clinic-name"
+                className="block text-[13px] font-['Space_Grotesk'] font-700 text-[#005C41] opacity-70 mb-2 uppercase tracking-wider"
+              >
+                Nome da clínica
+              </label>
+              <input
+                id="clinic-name"
+                type="text"
+                required
+                value={clinicName}
+                onChange={e => setClinicName(e.target.value)}
+                className="w-full px-5 py-4 rounded-xl bg-[#F4FBF7] border border-[#025940]/[0.08] text-[#0B1F16] placeholder-[#7AA88D] focus:outline-none focus:ring-2 focus:ring-[#23D996]/30 transition-all font-['Space_Grotesk'] text-[15px]"
+                placeholder="Ex.: Clínica Silva"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="clinic-whatsapp"
+                className="block text-[13px] font-['Space_Grotesk'] font-700 text-[#005C41] opacity-70 mb-2 uppercase tracking-wider"
+              >
+                WhatsApp da clínica
+              </label>
+              <div className="w-full flex items-stretch rounded-xl bg-[#F4FBF7] border border-[#025940]/[0.08] overflow-hidden focus-within:ring-2 focus-within:ring-[#23D996]/30 transition-all">
+                <div className="flex items-center px-4 text-[#025940] opacity-70 font-['Space_Grotesk'] text-[15px] border-r border-[#025940]/10 bg-[#F4FBF7]">
+                  +55
+                </div>
                 <input
-                  id="clinic-name"
-                  type="text"
+                  id="clinic-whatsapp"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel-national"
                   required
-                  value={clinicName}
-                  onChange={(e) => setClinicName(e.target.value)}
-                  className="w-full px-5 py-4 rounded-xl bg-[#F4FBF7] border border-[#025940]/[0.08] text-[#0B1F16] placeholder-[#7AA88D] focus:outline-none focus:ring-2 focus:ring-[#23D996]/30 transition-all font-['Space_Grotesk'] text-[15px]"
-                  placeholder="Ex.: Clínica Silva"
+                  value={formatBrPhone(whatsappDigits)}
+                  onChange={e => {
+                    let d = digitsOnly(e.target.value);
+                    if (d.startsWith("55") && d.length > 11) d = d.slice(2);
+                    setWhatsappDigits(d.slice(0, 11));
+                  }}
+                  className="flex-1 min-w-0 px-5 py-4 bg-transparent text-[#0B1F16] placeholder-[#7AA88D] focus:outline-none font-['Space_Grotesk'] text-[15px]"
+                  placeholder="(11) 91234-5678"
                 />
               </div>
+              <p className="mt-2 text-[12px] text-[#7AA88D] font-['Space_Grotesk']">
+                Esse será o número que a clínica vai vincular pelo onboarding
+                oficial da Meta.
+              </p>
+            </div>
 
-              <div>
-                <label
-                  htmlFor="clinic-whatsapp"
-                  className="block text-[13px] font-['Space_Grotesk'] font-700 text-[#005C41] opacity-70 mb-2 uppercase tracking-wider"
+            <div>
+              <p className="block text-[13px] font-['Space_Grotesk'] font-700 text-[#005C41] opacity-70 mb-2 uppercase tracking-wider">
+                Essa conta é para:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    hasEditedPlanRef.current = true;
+                    setPlan("essencial");
+                  }}
+                  className={`group relative overflow-hidden rounded-2xl px-5 py-4 border text-left transition-[transform,box-shadow,background-color,border-color] duration-300 active:translate-y-[1px] ${
+                    plan === "essencial"
+                      ? "border-[#23D996] bg-white shadow-[0_20px_60px_-35px_rgba(2,89,64,0.55)]"
+                      : "border-[#025940]/[0.08] bg-white hover:bg-[#F4FBF7] hover:shadow-[0_18px_50px_-38px_rgba(2,89,64,0.35)]"
+                  }`}
                 >
-                  WhatsApp da clínica
-                </label>
-                <div className="w-full flex items-stretch rounded-xl bg-[#F4FBF7] border border-[#025940]/[0.08] overflow-hidden focus-within:ring-2 focus-within:ring-[#23D996]/30 transition-all">
-                  <div className="flex items-center px-4 text-[#025940] opacity-70 font-['Space_Grotesk'] text-[15px] border-r border-[#025940]/10 bg-[#F4FBF7]">
-                    +55
-                  </div>
-                  <input
-                    id="clinic-whatsapp"
-                    type="tel"
-                    inputMode="numeric"
-                    autoComplete="tel-national"
-                    required
-                    value={formatBrPhone(whatsappDigits)}
-                    onChange={(e) => {
-                      let d = digitsOnly(e.target.value);
-                      if (d.startsWith("55") && d.length > 11) d = d.slice(2);
-                      setWhatsappDigits(d.slice(0, 11));
+                  <div
+                    className={`pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 ${
+                      plan === "essencial"
+                        ? "opacity-100"
+                        : "group-hover:opacity-60"
+                    }`}
+                    style={{
+                      background:
+                        "radial-gradient(600px 180px at 20% 10%, rgba(35,217,150,0.16), transparent 60%), radial-gradient(420px 160px at 90% 90%, rgba(2,89,64,0.10), transparent 55%)",
                     }}
-                    className="flex-1 min-w-0 px-5 py-4 bg-transparent text-[#0B1F16] placeholder-[#7AA88D] focus:outline-none font-['Space_Grotesk'] text-[15px]"
-                    placeholder="(11) 91234-5678"
                   />
-                </div>
-                <p className="mt-2 text-[12px] text-[#7AA88D] font-['Space_Grotesk']">
-                  Esse será o número para conexão via QR Code.
-                </p>
-              </div>
-
-              <div>
-                <p className="block text-[13px] font-['Space_Grotesk'] font-700 text-[#005C41] opacity-70 mb-2 uppercase tracking-wider">
-                  Essa conta é para:
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      hasEditedPlanRef.current = true;
-                      setPlan("essencial");
-                    }}
-                    className={`group relative overflow-hidden rounded-2xl px-5 py-4 border text-left transition-[transform,box-shadow,background-color,border-color] duration-300 active:translate-y-[1px] ${plan === "essencial"
-                      ? "border-[#23D996] bg-white shadow-[0_20px_60px_-35px_rgba(2,89,64,0.55)]"
-                      : "border-[#025940]/[0.08] bg-white hover:bg-[#F4FBF7] hover:shadow-[0_18px_50px_-38px_rgba(2,89,64,0.35)]"
-                      }`}
-                  >
+                  <div className="flex items-start gap-3 sm:flex-col sm:items-center sm:text-center">
                     <div
-                      className={`pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 ${plan === "essencial" ? "opacity-100" : "group-hover:opacity-60"
-                        }`}
-                      style={{
-                        background:
-                          "radial-gradient(600px 180px at 20% 10%, rgba(35,217,150,0.16), transparent 60%), radial-gradient(420px 160px at 90% 90%, rgba(2,89,64,0.10), transparent 55%)",
-                      }}
-                    />
-                    <div className="flex items-start gap-3 sm:flex-col sm:items-center sm:text-center">
-                      <div
-                        className={`flex-none flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ring-inset transition-colors sm:mx-auto ${plan === "essencial"
+                      className={`flex-none flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ring-inset transition-colors sm:mx-auto ${
+                        plan === "essencial"
                           ? "bg-[#062B1D] text-[#23D996] ring-white/10 shadow-[0_14px_30px_-22px_rgba(6,43,29,0.9)]"
                           : "bg-white text-[#062B1D]/70 ring-[#025940]/10"
-                          }`}
-                      >
-                        <User className="h-5 w-5 shrink-0" strokeWidth={2.2} />
+                      }`}
+                    >
+                      <User className="h-5 w-5 shrink-0" strokeWidth={2.2} />
+                    </div>
+                    <div className="min-w-0 flex-1 sm:flex-none sm:w-full">
+                      <div className="font-['Syne'] font-800 text-[#025940] leading-tight tracking-tight">
+                        Somente eu
                       </div>
-                      <div className="min-w-0 flex-1 sm:flex-none sm:w-full">
-                        <div className="font-['Syne'] font-800 text-[#025940] leading-tight tracking-tight">
-                          Somente eu
-                        </div>
-                        <div className="mt-1 text-[12.5px] text-[#005C41] opacity-75 font-['Space_Grotesk'] leading-snug">
-                          Ideal para uso individual.
-                        </div>
+                      <div className="mt-1 text-[12.5px] text-[#005C41] opacity-75 font-['Space_Grotesk'] leading-snug">
+                        Ideal para uso individual.
                       </div>
                     </div>
+                  </div>
 
-                    <div className="mt-3 sm:hidden">
-                      <div className="h-px w-full bg-[#025940]/[0.06]" />
-                      <div className="mt-3 flex items-center justify-between">
-                        <span className="text-[11px] font-800 uppercase tracking-[0.18em] text-[#7AA88D] font-['Space_Grotesk']">
-                          Individual
-                        </span>
-                        <span
-                          className={`text-[11px] font-800 uppercase tracking-[0.18em] font-['Space_Grotesk'] ${plan === "essencial" ? "text-[#118C5F]" : "text-[#7AA88D]"
-                            }`}
-                        >
-                          {plan === "essencial" ? "Selecionado" : "Selecionar"}
-                        </span>
-                      </div>
+                  <div className="mt-3 sm:hidden">
+                    <div className="h-px w-full bg-[#025940]/[0.06]" />
+                    <div className="mt-3 flex items-center justify-between">
+                      <span className="text-[11px] font-800 uppercase tracking-[0.18em] text-[#7AA88D] font-['Space_Grotesk']">
+                        Individual
+                      </span>
+                      <span
+                        className={`text-[11px] font-800 uppercase tracking-[0.18em] font-['Space_Grotesk'] ${
+                          plan === "essencial"
+                            ? "text-[#118C5F]"
+                            : "text-[#7AA88D]"
+                        }`}
+                      >
+                        {plan === "essencial" ? "Selecionado" : "Selecionar"}
+                      </span>
                     </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      hasEditedPlanRef.current = true;
-                      setPlan("professional");
-                    }}
-                    className={`group relative overflow-hidden rounded-2xl px-5 py-4 border text-left transition-[transform,box-shadow,background-color,border-color] duration-300 active:translate-y-[1px] ${plan === "professional"
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    hasEditedPlanRef.current = true;
+                    setPlan("professional");
+                  }}
+                  className={`group relative overflow-hidden rounded-2xl px-5 py-4 border text-left transition-[transform,box-shadow,background-color,border-color] duration-300 active:translate-y-[1px] ${
+                    plan === "professional"
                       ? "border-[#23D996] bg-white shadow-[0_20px_60px_-35px_rgba(2,89,64,0.55)]"
                       : "border-[#025940]/[0.08] bg-white hover:bg-[#F4FBF7] hover:shadow-[0_18px_50px_-38px_rgba(2,89,64,0.35)]"
-                      }`}
-                  >
+                  }`}
+                >
+                  <div
+                    className={`pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 ${
+                      plan === "professional"
+                        ? "opacity-100"
+                        : "group-hover:opacity-60"
+                    }`}
+                    style={{
+                      background:
+                        "radial-gradient(600px 180px at 20% 10%, rgba(35,217,150,0.16), transparent 60%), radial-gradient(420px 160px at 90% 90%, rgba(2,89,64,0.10), transparent 55%)",
+                    }}
+                  />
+                  <div className="flex items-start gap-3 sm:flex-col sm:items-center sm:text-center">
                     <div
-                      className={`pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 ${plan === "professional" ? "opacity-100" : "group-hover:opacity-60"
-                        }`}
-                      style={{
-                        background:
-                          "radial-gradient(600px 180px at 20% 10%, rgba(35,217,150,0.16), transparent 60%), radial-gradient(420px 160px at 90% 90%, rgba(2,89,64,0.10), transparent 55%)",
-                      }}
-                    />
-                    <div className="flex items-start gap-3 sm:flex-col sm:items-center sm:text-center">
-                      <div
-                        className={`relative flex-none flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ring-inset transition-colors sm:mx-auto ${plan === "professional"
+                      className={`relative flex-none flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ring-inset transition-colors sm:mx-auto ${
+                        plan === "professional"
                           ? "bg-[#062B1D] text-[#23D996] ring-white/10 shadow-[0_14px_30px_-22px_rgba(6,43,29,0.9)]"
                           : "bg-white text-[#062B1D]/70 ring-[#025940]/10"
-                          }`}
-                      >
-                        <Users className="h-5 w-5 shrink-0" strokeWidth={2.2} />
-                        <span
-                          className={`absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-800 font-['Space_Grotesk'] border shadow-sm ${plan === "professional"
+                      }`}
+                    >
+                      <Users className="h-5 w-5 shrink-0" strokeWidth={2.2} />
+                      <span
+                        className={`absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-800 font-['Space_Grotesk'] border shadow-sm ${
+                          plan === "professional"
                             ? "bg-[#23D996] text-[#062B1D] border-[#23D996]"
                             : "bg-white text-[#062B1D]/70 border-[#025940]/10"
-                            }`}
-                          aria-label="Até 5 integrantes"
-                          title="Até 5 integrantes"
-                        >
-                          5
-                        </span>
+                        }`}
+                        aria-label="Até 5 integrantes"
+                        title="Até 5 integrantes"
+                      >
+                        5
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1 sm:flex-none sm:w-full">
+                      <div className="font-['Syne'] font-800 text-[#025940] leading-tight tracking-tight">
+                        Para a minha equipe
                       </div>
-                      <div className="min-w-0 flex-1 sm:flex-none sm:w-full">
-                        <div className="font-['Syne'] font-800 text-[#025940] leading-tight tracking-tight">
-                          Para a minha equipe
-                        </div>
-                        <div className="mt-1 text-[12.5px] text-[#005C41] opacity-75 font-['Space_Grotesk'] leading-snug">
-                          Ideal para clínicas de até 5 integrantes
-                        </div>
+                      <div className="mt-1 text-[12.5px] text-[#005C41] opacity-75 font-['Space_Grotesk'] leading-snug">
+                        Ideal para clínicas de até 5 integrantes
                       </div>
                     </div>
+                  </div>
 
-                    <div className="mt-3 sm:hidden">
-                      <div className="h-px w-full bg-[#025940]/[0.06]" />
-                      <div className="mt-3 flex items-center justify-between">
-                        <span className="text-[11px] font-800 uppercase tracking-[0.18em] text-[#7AA88D] font-['Space_Grotesk']">
-                          Equipe
-                        </span>
-                        <span
-                          className={`text-[11px] font-800 uppercase tracking-[0.18em] font-['Space_Grotesk'] ${plan === "professional" ? "text-[#118C5F]" : "text-[#7AA88D]"
-                            }`}
-                        >
-                          {plan === "professional" ? "Selecionado" : "Selecionar"}
-                        </span>
-                      </div>
+                  <div className="mt-3 sm:hidden">
+                    <div className="h-px w-full bg-[#025940]/[0.06]" />
+                    <div className="mt-3 flex items-center justify-between">
+                      <span className="text-[11px] font-800 uppercase tracking-[0.18em] text-[#7AA88D] font-['Space_Grotesk']">
+                        Equipe
+                      </span>
+                      <span
+                        className={`text-[11px] font-800 uppercase tracking-[0.18em] font-['Space_Grotesk'] ${
+                          plan === "professional"
+                            ? "text-[#118C5F]"
+                            : "text-[#7AA88D]"
+                        }`}
+                      >
+                        {plan === "professional" ? "Selecionado" : "Selecionar"}
+                      </span>
                     </div>
-                  </button>
-                </div>
-                <p className="mt-2 text-[12px] text-[#7AA88D] font-['Space_Grotesk']">
-                  Não se preocupe, os primeiros 14 dias serão por nossa conta.
-                </p>
+                  </div>
+                </button>
               </div>
+              <p className="mt-2 text-[12px] text-[#7AA88D] font-['Space_Grotesk']">
+                Não se preocupe, os primeiros 14 dias serão por nossa conta.
+              </p>
+            </div>
 
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-red-600 text-sm font-['Space_Grotesk'] font-500"
-                >
-                  {error}
-                </motion.div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-4.5 rounded-xl bg-[#025940] text-white font-['Syne'] font-700 text-[15px] hover:bg-[#118C5F] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-[0_8px_20px_rgba(2,89,64,0.15)] active:scale-[0.98]"
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-red-600 text-sm font-['Space_Grotesk'] font-500"
               >
-                {loading ? "Criando..." : "Continuar"}
-              </button>
-            </form>
+                {error}
+              </motion.div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-4.5 rounded-xl bg-[#025940] text-white font-['Syne'] font-700 text-[15px] hover:bg-[#118C5F] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-[0_8px_20px_rgba(2,89,64,0.15)] active:scale-[0.98]"
+            >
+              {loading ? "Criando..." : "Continuar"}
+            </button>
+          </form>
         </motion.div>
 
         <p className="text-center mt-4 text-[11px] text-[#7AA88D] font-['Space_Grotesk'] uppercase tracking-[0.2em] opacity-40">

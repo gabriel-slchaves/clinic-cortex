@@ -1,21 +1,59 @@
+import {
+  getConfiguredAppOrigin,
+  getConfiguredLandingOrigin,
+  getFrontendAppEnvironment,
+  getOriginHostname,
+  isLocalOrigin,
+} from "@/lib/runtimeEnvironment";
+
 function stripWww(hostname: string): string {
   return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
 }
 
+function hasAppPrefix(hostname: string): boolean {
+  return (
+    hostname === "app.localhost" ||
+    hostname.startsWith("app.") ||
+    hostname.startsWith("app-")
+  );
+}
+
+function shouldUseConfiguredOrigin(origin: string) {
+  if (!origin) return false;
+  if (getFrontendAppEnvironment() !== "local") return true;
+  return isLocalOrigin(origin);
+}
+
 export function isAppHostname(hostname: string): boolean {
-  return hostname === "app.localhost" || hostname.startsWith("app.");
+  const configuredHostname = getOriginHostname(getConfiguredAppOrigin());
+  if (configuredHostname) return hostname === configuredHostname;
+  return hasAppPrefix(hostname);
 }
 
 function getAppHostname(hostname: string): string {
+  const configuredHostname = getOriginHostname(getConfiguredAppOrigin());
+  if (configuredHostname && shouldUseConfiguredOrigin(getConfiguredAppOrigin())) {
+    return configuredHostname;
+  }
+
   if (hostname === "app.localhost") return hostname;
   if (hostname === "localhost" || hostname === "127.0.0.1") return "app.localhost";
-  if (hostname.startsWith("app.")) return hostname;
+  if (hasAppPrefix(hostname)) return hostname;
   return `app.${stripWww(hostname)}`;
 }
 
 function getPublicHostname(hostname: string): string {
+  const configuredHostname = getOriginHostname(getConfiguredLandingOrigin());
+  if (
+    configuredHostname &&
+    shouldUseConfiguredOrigin(getConfiguredLandingOrigin())
+  ) {
+    return configuredHostname;
+  }
+
   if (hostname === "app.localhost") return "localhost";
   if (hostname.startsWith("app.")) return hostname.slice(4);
+  if (hostname.startsWith("app-")) return hostname;
   return hostname;
 }
 
@@ -25,14 +63,18 @@ function getPublicHostname(hostname: string): string {
  * para persistência e redirects pós-auth funcionarem.
  */
 export function getAppOrigin(): string {
-  if (typeof window === "undefined") return "";
+  const explicitOrigin = getConfiguredAppOrigin();
+  if (shouldUseConfiguredOrigin(explicitOrigin)) return explicitOrigin;
+  if (typeof window === "undefined") return explicitOrigin;
   const { protocol, hostname, port } = window.location;
   const appHostname = getAppHostname(hostname);
   return `${protocol}//${appHostname}${port ? `:${port}` : ""}`;
 }
 
 export function getPublicOrigin(): string {
-  if (typeof window === "undefined") return "";
+  const explicitOrigin = getConfiguredLandingOrigin();
+  if (shouldUseConfiguredOrigin(explicitOrigin)) return explicitOrigin;
+  if (typeof window === "undefined") return explicitOrigin;
   const { protocol, hostname, port } = window.location;
   const publicHostname = getPublicHostname(hostname);
   return `${protocol}//${publicHostname}${port ? `:${port}` : ""}`;

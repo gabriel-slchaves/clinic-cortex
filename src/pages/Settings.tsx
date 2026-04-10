@@ -7,7 +7,9 @@ import {
 } from "@/components/settings/BrandIcons";
 import IntegrationCard from "@/components/settings/IntegrationCard";
 import SubscriptionBento from "@/components/settings/SubscriptionBento";
-import TeamManagementCard, { type TeamManagementRow } from "@/components/settings/TeamManagementCard";
+import TeamManagementCard, {
+  type TeamManagementRow,
+} from "@/components/settings/TeamManagementCard";
 import WhatsAppIntegrationModal from "@/components/settings/WhatsAppIntegrationModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme, type Theme } from "@/contexts/ThemeContext";
@@ -30,6 +32,7 @@ import {
   createClinicTeamMember,
   updateClinicPlan,
   updateClinicTeamMember,
+  type TeamMember,
   type TeamMemberInput,
   type TeamMemberUpdateInput,
   type TeamPlanSummary,
@@ -38,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CalendarDays, CheckCircle2, Save, Shield, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useLocation } from "wouter";
 
 function isSchemaMissingError(err: unknown) {
@@ -60,7 +64,9 @@ function safeNumber(value: unknown) {
 }
 
 function normalizePlanKey(value: string | null | undefined) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   if (normalized === "essential") return "essencial";
   return normalized;
 }
@@ -84,7 +90,11 @@ function formatPlanPrice(value: number | null | undefined) {
   }).format(amount);
 }
 
-function formatPlanLimit(value: number | null | undefined, singular: string, plural: string) {
+function formatPlanLimit(
+  value: number | null | undefined,
+  singular: string,
+  plural: string
+) {
   const amount = safeNumber(value);
   if (amount < 0) return "Ilimitado";
   if (amount === 1) return `1 ${singular}`;
@@ -92,7 +102,44 @@ function formatPlanLimit(value: number | null | undefined, singular: string, plu
 }
 
 function sortTeamRows(rows: TeamManagementRow[]) {
-  return [...rows].sort((left, right) => left.fullName.localeCompare(right.fullName, "pt-BR"));
+  return [...rows].sort((left, right) =>
+    left.fullName.localeCompare(right.fullName, "pt-BR")
+  );
+}
+
+function recomputeTeamPlan(
+  plan: TeamPlanSummary | null,
+  rows: TeamManagementRow[]
+) {
+  if (!plan) return null;
+
+  const usedDoctors = rows.filter(
+    member => member.memberKind === "doctor"
+  ).length;
+  const usedSecretaries = rows.filter(
+    member => member.memberKind === "secretary"
+  ).length;
+
+  return {
+    ...plan,
+    usedDoctors,
+    usedSecretaries,
+    remainingDoctors:
+      plan.maxDoctors < 0 ? -1 : Math.max(0, plan.maxDoctors - usedDoctors),
+    remainingSecretaries:
+      plan.maxSecretaries < 0
+        ? -1
+        : Math.max(0, plan.maxSecretaries - usedSecretaries),
+  } satisfies TeamPlanSummary;
+}
+
+function mergeMemberIntoRows(rows: TeamManagementRow[], member: TeamMember) {
+  const hasExisting = rows.some(row => row.id === member.id);
+  const nextRows = hasExisting
+    ? rows.map(row => (row.id === member.id ? member : row))
+    : [...rows, member];
+
+  return sortTeamRows(nextRows);
 }
 
 const THEME_OPTIONS: Array<{
@@ -101,10 +148,30 @@ const THEME_OPTIONS: Array<{
   color: string;
   description: string;
 }> = [
-  { id: "light", name: "Claro", color: "#E9FDF4", description: "Leve e clean." },
-  { id: "dark", name: "Escuro", color: "#131318", description: "Neutro e discreto." },
-  { id: "forest", name: "Verde floresta", color: "#062B1D", description: "Profundo e clínico." },
-  { id: "emerald", name: "Verde esmeralda", color: "#23D996", description: "Energia máxima (exemplo)." },
+  {
+    id: "light",
+    name: "Claro",
+    color: "#E9FDF4",
+    description: "Leve e clean.",
+  },
+  {
+    id: "dark",
+    name: "Escuro",
+    color: "#131318",
+    description: "Neutro e discreto.",
+  },
+  {
+    id: "forest",
+    name: "Verde floresta",
+    color: "#062B1D",
+    description: "Profundo e clínico.",
+  },
+  {
+    id: "emerald",
+    name: "Verde esmeralda",
+    color: "#23D996",
+    description: "Energia máxima (exemplo).",
+  },
 ];
 
 type SettingsTeamCache = {
@@ -123,7 +190,8 @@ export default function Settings() {
   const [location] = useLocation();
 
   const viewerEmail = String(user?.email || "").trim();
-  const viewerFullName = String((user as any)?.user_metadata?.full_name || "").trim() || null;
+  const viewerFullName =
+    String((user as any)?.user_metadata?.full_name || "").trim() || null;
 
   const settingsPage = useSettingsPageData({
     userId,
@@ -148,7 +216,8 @@ export default function Settings() {
       end: "18:00",
     })
   );
-  const [initialOperationHours, setInitialOperationHours] = useState<OperationHours | null>(null);
+  const [initialOperationHours, setInitialOperationHours] =
+    useState<OperationHours | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [selectedPlanKey, setSelectedPlanKey] = useState("");
@@ -156,7 +225,6 @@ export default function Settings() {
   const [planError, setPlanError] = useState<string | null>(null);
   const [whatsAppModalOpen, setWhatsAppModalOpen] = useState(false);
   const hydratedClinicIdRef = useRef<string | null>(null);
-  const whatsAppAutoStartRef = useRef<string | null>(null);
 
   const subscriptionPlanName = settingsData?.subscriptionPlanName || "";
   const subscriptionStatus = settingsData?.subscriptionStatus || "";
@@ -164,9 +232,11 @@ export default function Settings() {
   const monthlyPatientsValue = settingsData?.monthlyPatientsValue || "";
   const monthlyPatientsMeta = settingsData?.monthlyPatientsMeta || "";
   const monthlyPatientsProgress = settingsData?.monthlyPatientsProgress ?? null;
-  const monthlyPatientsUnlimited = settingsData?.monthlyPatientsUnlimited ?? false;
+  const monthlyPatientsUnlimited =
+    settingsData?.monthlyPatientsUnlimited ?? false;
   const clinicAreaId = settingsData?.clinicAreaId ?? null;
-  const clinicAssistantSpecialties = settingsData?.clinicAssistantSpecialties ?? [];
+  const clinicAssistantSpecialties =
+    settingsData?.clinicAssistantSpecialties ?? [];
   const teamRows = settingsData?.teamRows ?? [];
   const teamPlan = settingsData?.teamPlan ?? null;
   const teamCanManage = settingsData?.teamCanManage ?? false;
@@ -175,7 +245,9 @@ export default function Settings() {
   const desiredPlanKey = settingsData?.desiredPlanKey ?? "";
   const canManagePlan = settingsData?.canManagePlan ?? false;
   const managePlanHint = settingsData?.managePlanHint ?? "";
-  const canManageWhatsApp = Boolean(settingsData?.memberIsAdmin || settingsData?.memberRole === "owner");
+  const canManageWhatsApp = Boolean(
+    settingsData?.memberIsAdmin || settingsData?.memberRole === "owner"
+  );
   const whatsAppConnection = useClinicWhatsAppConnection(clinicId);
 
   useEffect(() => {
@@ -194,16 +266,27 @@ export default function Settings() {
   }, [clinicId, settingsData]);
 
   const enabledDays = useMemo(
-    () => DAYS.filter((day) => Boolean(operationHours[day.id]?.enabled)).map((day) => day.id) as DayId[],
+    () =>
+      DAYS.filter(day => Boolean(operationHours[day.id]?.enabled)).map(
+        day => day.id
+      ) as DayId[],
     [operationHours]
   );
 
-  const syncSelectedPlanKey = (plans: PlanOption[], preferredPlanKey?: string) => {
-    const availableKeys = plans.map((plan) => normalizePlanKey(plan.name)).filter(Boolean);
+  const syncSelectedPlanKey = (
+    plans: PlanOption[],
+    preferredPlanKey?: string
+  ) => {
+    const availableKeys = plans
+      .map(plan => normalizePlanKey(plan.name))
+      .filter(Boolean);
     const candidate =
       [normalizePlanKey(preferredPlanKey), desiredPlanKey, selectedPlanKey]
         .filter(Boolean)
-        .find((value) => availableKeys.length === 0 || availableKeys.includes(String(value))) || "";
+        .find(
+          value =>
+            availableKeys.length === 0 || availableKeys.includes(String(value))
+        ) || "";
 
     setSelectedPlanKey(candidate || availableKeys[0] || "");
   };
@@ -212,7 +295,9 @@ export default function Settings() {
     if (!initialOperationHours) return false;
     if (clinicName !== initialClinicName) return true;
     try {
-      return JSON.stringify(operationHours) !== JSON.stringify(initialOperationHours);
+      return (
+        JSON.stringify(operationHours) !== JSON.stringify(initialOperationHours)
+      );
     } catch {
       return true;
     }
@@ -242,47 +327,6 @@ export default function Settings() {
     void whatsAppConnection.refreshConnection().catch(() => undefined);
   }, [clinicId, whatsAppConnection.refreshConnection, whatsAppModalOpen]);
 
-  useEffect(() => {
-    if (!whatsAppModalOpen) {
-      whatsAppAutoStartRef.current = null;
-    }
-  }, [whatsAppModalOpen]);
-
-  useEffect(() => {
-    if (!whatsAppModalOpen || !clinicId || !canManageWhatsApp) return;
-    if (whatsAppConnection.loading || whatsAppConnection.isStarting) return;
-    if (whatsAppConnection.qrCode) return;
-
-    const connection = whatsAppConnection.connection;
-    if (connection?.status === "connected") return;
-    if (connection?.status === "qr_pending") return;
-    if (connection?.status === "creating" || connection?.isRecovering) return;
-    if (connection?.pairingBlocked) return;
-
-    const shouldAutoStart =
-      !connection ||
-      connection.manualActionRequired ||
-      connection.status === "idle" ||
-      connection.status === "error";
-
-    if (!shouldAutoStart) return;
-
-    const autoStartKey = `${clinicId}:${connection?.connectionId || "new"}`;
-    if (whatsAppAutoStartRef.current === autoStartKey) return;
-    whatsAppAutoStartRef.current = autoStartKey;
-
-    void whatsAppConnection.startConnection().catch(() => undefined);
-  }, [
-    canManageWhatsApp,
-    clinicId,
-    whatsAppConnection.connection,
-    whatsAppConnection.isStarting,
-    whatsAppConnection.loading,
-    whatsAppConnection.qrCode,
-    whatsAppConnection.startConnection,
-    whatsAppModalOpen,
-  ]);
-
   const handleWhatsAppModalChange = (open: boolean) => {
     setWhatsAppModalOpen(open);
     if (typeof window === "undefined") return;
@@ -292,7 +336,11 @@ export default function Settings() {
     } else {
       url.searchParams.delete("integration");
     }
-    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    window.history.replaceState(
+      {},
+      "",
+      `${url.pathname}${url.search}${url.hash}`
+    );
   };
 
   const validate = () => {
@@ -300,10 +348,19 @@ export default function Settings() {
     for (const dayId of enabledDays) {
       const row = operationHours[dayId];
       if (!row) continue;
-      if (!isStartBeforeEnd(row.start, row.end)) return "Revise o horário de atendimento.";
+      if (!isStartBeforeEnd(row.start, row.end))
+        return "Revise o horário de atendimento.";
       if (row.break_enabled) {
-        if (!isStartBeforeEnd(row.break_start, row.break_end)) return "Revise o intervalo de almoço.";
-        if (!intervalFitsWithinDay(row.start, row.end, row.break_start, row.break_end)) {
+        if (!isStartBeforeEnd(row.break_start, row.break_end))
+          return "Revise o intervalo de almoço.";
+        if (
+          !intervalFitsWithinDay(
+            row.start,
+            row.end,
+            row.break_start,
+            row.break_end
+          )
+        ) {
           return "O intervalo de almoço precisa estar dentro do horário de atendimento.";
         }
       }
@@ -316,9 +373,9 @@ export default function Settings() {
       if (!clinicId) throw new Error("Não foi possível identificar a clínica.");
 
       const nextOperationHours = cloneOperationHours(operationHours);
-      const activeDays = DAYS.filter((day) => Boolean(nextOperationHours[day.id]?.enabled)).map(
-        (day) => day.id
-      ) as DayId[];
+      const activeDays = DAYS.filter(day =>
+        Boolean(nextOperationHours[day.id]?.enabled)
+      ).map(day => day.id) as DayId[];
 
       if (!activeDays.length) {
         throw new Error("Selecione pelo menos um dia de operação.");
@@ -334,23 +391,39 @@ export default function Settings() {
         return value > max ? value : max;
       }, nextOperationHours[activeDays[0]]?.end || "18:00");
 
-      const breakDays = activeDays.filter((dayId) => Boolean(nextOperationHours[dayId]?.break_enabled));
+      const breakDays = activeDays.filter(dayId =>
+        Boolean(nextOperationHours[dayId]?.break_enabled)
+      );
       const hasAnyBreak = breakDays.length > 0;
       const defaultBreakStart = "12:00";
       const defaultBreakEnd = "13:30";
 
       const breakStartGlobal = hasAnyBreak
-        ? breakDays.reduce((min, dayId) => {
-            const value = String(nextOperationHours[dayId]?.break_start || defaultBreakStart).slice(0, 5);
-            return value < min ? value : min;
-          }, String(nextOperationHours[breakDays[0]]?.break_start || defaultBreakStart).slice(0, 5))
+        ? breakDays.reduce(
+            (min, dayId) => {
+              const value = String(
+                nextOperationHours[dayId]?.break_start || defaultBreakStart
+              ).slice(0, 5);
+              return value < min ? value : min;
+            },
+            String(
+              nextOperationHours[breakDays[0]]?.break_start || defaultBreakStart
+            ).slice(0, 5)
+          )
         : defaultBreakStart;
 
       const breakEndGlobal = hasAnyBreak
-        ? breakDays.reduce((max, dayId) => {
-            const value = String(nextOperationHours[dayId]?.break_end || defaultBreakEnd).slice(0, 5);
-            return value > max ? value : max;
-          }, String(nextOperationHours[breakDays[0]]?.break_end || defaultBreakEnd).slice(0, 5))
+        ? breakDays.reduce(
+            (max, dayId) => {
+              const value = String(
+                nextOperationHours[dayId]?.break_end || defaultBreakEnd
+              ).slice(0, 5);
+              return value > max ? value : max;
+            },
+            String(
+              nextOperationHours[breakDays[0]]?.break_end || defaultBreakEnd
+            ).slice(0, 5)
+          )
         : defaultBreakEnd;
 
       const trimmedName = clinicName.trim();
@@ -367,14 +440,19 @@ export default function Settings() {
         shift_afternoon_end: hasAnyBreak ? maxEnd : null,
       };
 
-      const { error: fullError } = await supabase.from("clinics").update(payloadFull).eq("id", clinicId);
+      const { error: fullError } = await supabase
+        .from("clinics")
+        .update(payloadFull)
+        .eq("id", clinicId);
       if (fullError) {
         if (import.meta.env.DEV) {
           console.warn("[Settings] update error:", fullError);
         }
 
         if (!isSchemaMissingError(fullError)) {
-          throw new Error("Não foi possível salvar suas configurações. Tente novamente.");
+          throw new Error(
+            "Não foi possível salvar suas configurações. Tente novamente."
+          );
         }
 
         const payloadFallback: Record<string, any> = {
@@ -388,12 +466,17 @@ export default function Settings() {
           shift_afternoon_end: hasAnyBreak ? maxEnd : null,
         };
 
-        const { error: fallbackError } = await supabase.from("clinics").update(payloadFallback).eq("id", clinicId);
+        const { error: fallbackError } = await supabase
+          .from("clinics")
+          .update(payloadFallback)
+          .eq("id", clinicId);
         if (fallbackError) {
           if (import.meta.env.DEV) {
             console.warn("[Settings] fallback update error:", fallbackError);
           }
-          throw new Error("Não foi possível salvar suas configurações. Tente novamente.");
+          throw new Error(
+            "Não foi possível salvar suas configurações. Tente novamente."
+          );
         }
       }
 
@@ -410,26 +493,30 @@ export default function Settings() {
       setInitialOperationHours(cloneOperationHours(nextOperationHours));
       setSaved(true);
 
-      queryClient.setQueryData(settingsQueryKeys.clinicBase(clinicId), (current: any) =>
-        current
-          ? {
-              ...current,
-              clinicName: trimmedName,
-              operationHours: cloneOperationHours(nextOperationHours),
-            }
-          : current
+      queryClient.setQueryData(
+        settingsQueryKeys.clinicBase(clinicId),
+        (current: any) =>
+          current
+            ? {
+                ...current,
+                clinicName: trimmedName,
+                operationHours: cloneOperationHours(nextOperationHours),
+              }
+            : current
       );
 
       await queryClient.invalidateQueries({
         queryKey: settingsQueryKeys.clinicBase(clinicId),
       });
     },
-    onError: (error) => {
+    onError: error => {
       if (import.meta.env.DEV) {
         console.warn("[Settings] unexpected save error:", error);
       }
       setSaveError(
-        error instanceof Error ? error.message : "Não foi possível salvar suas configurações. Tente novamente."
+        error instanceof Error
+          ? error.message
+          : "Não foi possível salvar suas configurações. Tente novamente."
       );
     },
   });
@@ -438,12 +525,16 @@ export default function Settings() {
     mutationFn: async (nextSelectedPlan: PlanOption) => {
       if (!clinicId) throw new Error("Não foi possível identificar a clínica.");
 
-      const nextDesiredPlanName = String(nextSelectedPlan.name || selectedPlanKey).trim();
+      const nextDesiredPlanName = String(
+        nextSelectedPlan.name || selectedPlanKey
+      ).trim();
       let effectivePlanName = nextDesiredPlanName;
 
       try {
         const payload = await updateClinicPlan(clinicId, nextSelectedPlan.id);
-        effectivePlanName = String(payload.currentPlanName || nextDesiredPlanName).trim() || nextDesiredPlanName;
+        effectivePlanName =
+          String(payload.currentPlanName || nextDesiredPlanName).trim() ||
+          nextDesiredPlanName;
       } catch (serviceError) {
         if (import.meta.env.DEV) {
           console.warn("[Settings] internal plan update error:", serviceError);
@@ -465,30 +556,38 @@ export default function Settings() {
         effectivePlanKey: normalizePlanKey(effectivePlanName),
       };
     },
-    onSuccess: async ({ nextSelectedPlan, effectivePlanName, effectivePlanKey }) => {
+    onSuccess: async ({
+      nextSelectedPlan,
+      effectivePlanName,
+      effectivePlanKey,
+    }) => {
       if (!clinicId) return;
 
       setSelectedPlanKey(effectivePlanKey);
       setPlanError(null);
       setPlanModalOpen(false);
 
-      queryClient.setQueryData(settingsQueryKeys.clinicBase(clinicId), (current: any) =>
-        current
-          ? {
-              ...current,
-              desiredPlanName: effectivePlanName,
-              desiredPlanKey: effectivePlanKey,
-            }
-          : current
+      queryClient.setQueryData(
+        settingsQueryKeys.clinicBase(clinicId),
+        (current: any) =>
+          current
+            ? {
+                ...current,
+                desiredPlanName: effectivePlanName,
+                desiredPlanKey: effectivePlanKey,
+              }
+            : current
       );
 
-      queryClient.setQueryData(settingsQueryKeys.subscription(clinicId), (current: any) =>
-        current
-          ? {
-              ...current,
-              plan_id: nextSelectedPlan.id,
-            }
-          : current
+      queryClient.setQueryData(
+        settingsQueryKeys.subscription(clinicId),
+        (current: any) =>
+          current
+            ? {
+                ...current,
+                plan_id: nextSelectedPlan.id,
+              }
+            : current
       );
 
       await Promise.all([
@@ -503,45 +602,46 @@ export default function Settings() {
         }),
       ]);
     },
-    onError: (error) => {
+    onError: error => {
       if (import.meta.env.DEV) {
         console.warn("[Settings] desired_plan unexpected error:", error);
       }
       setPlanError(
-        error instanceof Error ? error.message : "Não foi possível atualizar o plano agora. Tente novamente."
+        error instanceof Error
+          ? error.message
+          : "Não foi possível atualizar o plano agora. Tente novamente."
       );
     },
   });
 
   const createTeamMemberMutation = useMutation({
     mutationFn: async (input: TeamMemberInput) => {
-      if (!clinicId) throw new Error("Não foi possível identificar a clínica para criar o usuário.");
+      if (!clinicId)
+        throw new Error(
+          "Não foi possível identificar a clínica para criar o usuário."
+        );
       return createClinicTeamMember(clinicId, input);
     },
-    onSuccess: (createdMember, input) => {
+    onSuccess: createdMember => {
       if (!clinicId) return;
-
-      const nextMember: TeamManagementRow = {
-        ...createdMember,
-        fullName: input.fullName.trim() || createdMember.fullName,
-        email: input.email.trim().toLowerCase() || createdMember.email,
-        accessLevel: createdMember.isOwner ? createdMember.accessLevel : input.accessLevel,
-        memberKind: input.accessLevel === "secretary" ? "secretary" : "doctor",
-        areaId: input.areaId ?? null,
-        specialties: [...input.specialties],
-        licenseCode: input.licenseCode ?? null,
-      };
 
       queryClient.setQueryData<SettingsTeamCache | undefined>(
         settingsQueryKeys.team(clinicId),
-        (current) =>
-          current
-            ? {
-                ...current,
-                rows: sortTeamRows([...current.rows, nextMember]),
-              }
-            : current
+        current => {
+          if (!current) return current;
+
+          const rows = mergeMemberIntoRows(current.rows, createdMember);
+          return {
+            ...current,
+            rows,
+            plan: recomputeTeamPlan(current.plan, rows),
+          };
+        }
       );
+
+      toast.success("Usuário criado com sucesso", {
+        description: `${createdMember.fullName} já aparece na equipe como convidado pendente.`,
+      });
 
       void queryClient.invalidateQueries({
         queryKey: settingsQueryKeys.team(clinicId),
@@ -557,39 +657,32 @@ export default function Settings() {
       memberId: string;
       input: TeamMemberUpdateInput;
     }) => {
-      if (!clinicId) throw new Error("Não foi possível identificar a clínica para editar o usuário.");
+      if (!clinicId)
+        throw new Error(
+          "Não foi possível identificar a clínica para editar o usuário."
+        );
       return updateClinicTeamMember(clinicId, memberId, input);
     },
-    onSuccess: (updatedMember, variables) => {
+    onSuccess: updatedMember => {
       if (!clinicId) return;
-
-      const nextMember: TeamManagementRow = {
-        ...updatedMember,
-        fullName: variables.input.fullName.trim() || updatedMember.fullName,
-        accessLevel: updatedMember.isOwner
-          ? updatedMember.accessLevel
-          : variables.input.accessLevel || updatedMember.accessLevel,
-        memberKind:
-          (variables.input.accessLevel || updatedMember.accessLevel) === "secretary"
-            ? "secretary"
-            : "doctor",
-        areaId: variables.input.areaId ?? null,
-        specialties: [...variables.input.specialties],
-        licenseCode: variables.input.licenseCode ?? null,
-      };
 
       queryClient.setQueryData<SettingsTeamCache | undefined>(
         settingsQueryKeys.team(clinicId),
-        (current) =>
-          current
-            ? {
-                ...current,
-                rows: sortTeamRows(
-                  current.rows.map((row) => (row.id === updatedMember.id ? nextMember : row))
-                ),
-              }
-            : current
+        current => {
+          if (!current) return current;
+
+          const rows = mergeMemberIntoRows(current.rows, updatedMember);
+          return {
+            ...current,
+            rows,
+            plan: recomputeTeamPlan(current.plan, rows),
+          };
+        }
       );
+
+      toast.success("Usuário atualizado com sucesso", {
+        description: `${updatedMember.fullName} agora está sincronizado com a equipe da clínica.`,
+      });
 
       void queryClient.invalidateQueries({
         queryKey: settingsQueryKeys.team(clinicId),
@@ -600,9 +693,12 @@ export default function Settings() {
   const saving = saveClinicSettingsMutation.isPending;
   const savingPlan = saveDesiredPlanMutation.isPending;
   const selectedPlan =
-    planOptions.find((plan) => normalizePlanKey(plan.name) === selectedPlanKey) || null;
+    planOptions.find(plan => normalizePlanKey(plan.name) === selectedPlanKey) ||
+    null;
   const teamCardLoading =
-    teamLoading || createTeamMemberMutation.isPending || updateTeamMemberMutation.isPending;
+    teamLoading ||
+    createTeamMemberMutation.isPending ||
+    updateTeamMemberMutation.isPending;
 
   const onSave = async () => {
     setSaveError(null);
@@ -632,7 +728,9 @@ export default function Settings() {
     syncSelectedPlanKey(planOptions, preferredPlanKey);
 
     if (!clinicId) {
-      setPlanError("Não foi possível identificar a clínica para carregar os planos.");
+      setPlanError(
+        "Não foi possível identificar a clínica para carregar os planos."
+      );
       return;
     }
 
@@ -683,7 +781,10 @@ export default function Settings() {
     await createTeamMemberMutation.mutateAsync(input);
   };
 
-  const handleUpdateTeamMember = async (memberId: string, input: TeamMemberUpdateInput) => {
+  const handleUpdateTeamMember = async (
+    memberId: string,
+    input: TeamMemberUpdateInput
+  ) => {
     await updateTeamMemberMutation.mutateAsync({ memberId, input });
   };
 
@@ -702,7 +803,8 @@ export default function Settings() {
               Configurações do sistema
             </h1>
             <p className="mt-3 text-[14px] md:text-[15px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600 max-w-2xl">
-              Tela de exemplo — consistência visual, responsividade e reuso do editor de horários do onboarding.
+              Tela de exemplo — consistência visual, responsividade e reuso do
+              editor de horários do onboarding.
             </p>
           </div>
 
@@ -728,13 +830,17 @@ export default function Settings() {
             <p className="text-red-100 font-['Syne'] font-800 text-lg">
               Não foi possível abrir as configurações
             </p>
-            <p className="mt-2 text-sm text-red-100/80 font-['Space_Grotesk'] font-600">{loadError}</p>
+            <p className="mt-2 text-sm text-red-100/80 font-['Space_Grotesk'] font-600">
+              {loadError}
+            </p>
           </div>
         ) : null}
 
         {saveError ? (
           <div className="cc-glass-card rounded-3xl p-6 border border-red-500/20 bg-red-500/10">
-            <p className="text-red-100 font-['Space_Grotesk'] font-700">{saveError}</p>
+            <p className="text-red-100 font-['Space_Grotesk'] font-700">
+              {saveError}
+            </p>
           </div>
         ) : null}
 
@@ -763,15 +869,18 @@ export default function Settings() {
               <PaletteIcon className="size-5" />
             </span>
             <div>
-              <h2 className="text-2xl font-900 font-['Syne'] tracking-tight">Temas</h2>
+              <h2 className="text-2xl font-900 font-['Syne'] tracking-tight">
+                Temas
+              </h2>
               <p className="mt-1 text-[13px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
-                Clique para alternar entre Claro, Escuro, Verde floresta e Verde esmeralda.
+                Clique para alternar entre Claro, Escuro, Verde floresta e Verde
+                esmeralda.
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {THEME_OPTIONS.map((option) => {
+            {THEME_OPTIONS.map(option => {
               const selected = theme === option.id;
               return (
                 <button
@@ -788,7 +897,9 @@ export default function Settings() {
                 >
                   <div className="flex items-start justify-between gap-4 text-[var(--cc-theme-fg)]">
                     <div>
-                      <p className="text-[14px] font-900 font-['Syne']">{option.name}</p>
+                      <p className="text-[14px] font-900 font-['Syne']">
+                        {option.name}
+                      </p>
                       <p className="mt-1 text-[12px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
                         {option.description}
                       </p>
@@ -816,7 +927,9 @@ export default function Settings() {
               <PlugIcon className="size-5" />
             </span>
             <div>
-              <h2 className="text-2xl font-900 font-['Syne'] tracking-tight">Integrações</h2>
+              <h2 className="text-2xl font-900 font-['Syne'] tracking-tight">
+                Integrações
+              </h2>
               <p className="mt-1 text-[13px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
                 Integrações ativas para comunicação e agenda.
               </p>
@@ -826,7 +939,7 @@ export default function Settings() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <IntegrationCard
               title="WhatsApp Business"
-              description="Conexão oficial da clínica, QR Code, recuperação automática e alertas internos."
+              description="Conexão oficial via Meta Cloud API, onboarding self-serve e webhook assinado."
               status={whatsAppConnection.statusMeta.label}
               icon={<WhatsAppIcon className="size-8" />}
               cta={canManageWhatsApp ? "Configurar" : "Ver status"}
@@ -839,11 +952,13 @@ export default function Settings() {
                     Estado operacional
                   </p>
                   <p className="mt-2 text-[13px] font-800 text-[var(--cc-theme-fg)] font-['Syne']">
-                    {whatsAppConnection.connection?.lastEventMessage ||
-                      (whatsAppConnection.connection?.isRecovering
-                        ? "Recuperação automática em andamento."
-                        : whatsAppConnection.connection?.manualActionRequired
-                          ? "Intervenção humana necessária para gerar um novo QR."
+                    {whatsAppConnection.connection?.lastEvent?.message ||
+                      (whatsAppConnection.connection?.operationalStatus ===
+                      "onboarding"
+                        ? "Onboarding oficial em andamento."
+                        : whatsAppConnection.connection?.operationalStatus ===
+                            "action_required"
+                          ? "A Meta sinalizou ação necessária para essa clínica."
                           : "Nenhum evento crítico recente.")}
                   </p>
                 </div>
@@ -860,8 +975,12 @@ export default function Settings() {
 
         {teamError ? (
           <div className="cc-glass-card rounded-3xl p-5 border border-red-500/20 bg-red-500/10">
-            <p className="text-red-100 font-['Syne'] font-800 text-base">Gestão de equipe indisponível</p>
-            <p className="mt-2 text-sm text-red-100/80 font-['Space_Grotesk'] font-600">{teamError}</p>
+            <p className="text-red-100 font-['Syne'] font-800 text-base">
+              Gestão de equipe indisponível
+            </p>
+            <p className="mt-2 text-sm text-red-100/80 font-['Space_Grotesk'] font-600">
+              {teamError}
+            </p>
           </div>
         ) : null}
 
@@ -883,7 +1002,9 @@ export default function Settings() {
               <CalendarDays className="size-5" strokeWidth={2.4} />
             </span>
             <div>
-              <h2 className="text-2xl font-900 font-['Syne'] tracking-tight">Horários</h2>
+              <h2 className="text-2xl font-900 font-['Syne'] tracking-tight">
+                Horários
+              </h2>
               <p className="mt-1 text-[13px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
                 Reaproveitando o mesmo editor do onboarding (inputs + ícones).
               </p>
@@ -906,7 +1027,9 @@ export default function Settings() {
               <Shield className="size-5" strokeWidth={2.4} />
             </span>
             <div>
-              <h2 className="text-2xl font-900 font-['Syne'] tracking-tight">Segurança</h2>
+              <h2 className="text-2xl font-900 font-['Syne'] tracking-tight">
+                Segurança
+              </h2>
               <p className="mt-1 text-[13px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
                 Cards de exemplo (2FA, sessões, LGPD).
               </p>
@@ -916,9 +1039,14 @@ export default function Settings() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="cc-glass-card rounded-3xl p-6 text-[var(--cc-theme-fg)] flex items-start justify-between gap-4">
               <div className="flex gap-3">
-                <Shield className="size-5 text-[var(--cc-theme-accent)]" strokeWidth={2.4} />
+                <Shield
+                  className="size-5 text-[var(--cc-theme-accent)]"
+                  strokeWidth={2.4}
+                />
                 <div>
-                  <p className="text-[14px] font-900 font-['Syne']">Autenticação em 2 fatores (2FA)</p>
+                  <p className="text-[14px] font-900 font-['Syne']">
+                    Autenticação em 2 fatores (2FA)
+                  </p>
                   <p className="mt-1 text-[12px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
                     Obrigatório para admins (exemplo).
                   </p>
@@ -931,9 +1059,14 @@ export default function Settings() {
 
             <div className="cc-glass-card rounded-3xl p-6 text-[var(--cc-theme-fg)] flex items-start justify-between gap-4">
               <div className="flex gap-3">
-                <Shield className="size-5 text-[var(--cc-theme-accent)]" strokeWidth={2.4} />
+                <Shield
+                  className="size-5 text-[var(--cc-theme-accent)]"
+                  strokeWidth={2.4}
+                />
                 <div>
-                  <p className="text-[14px] font-900 font-['Syne']">Gestão de sessão</p>
+                  <p className="text-[14px] font-900 font-['Syne']">
+                    Gestão de sessão
+                  </p>
                   <p className="mt-1 text-[12px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
                     Logout automático após 30 min (exemplo).
                   </p>
@@ -952,7 +1085,9 @@ export default function Settings() {
               Salvar alterações
             </p>
             <p className="mt-2 text-[14px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
-              {dirty ? "Existem mudanças pendentes (clínica/horários)." : "Nenhuma mudança pendente agora."}
+              {dirty
+                ? "Existem mudanças pendentes (clínica/horários)."
+                : "Nenhuma mudança pendente agora."}
             </p>
           </div>
 
@@ -983,7 +1118,7 @@ export default function Settings() {
           <div className="absolute inset-0 bg-[#062B1D]/55 backdrop-blur-[6px]" />
           <div
             className="relative w-full max-w-4xl cc-glass-card rounded-[2rem] border border-[color:var(--cc-theme-card-border)] shadow-[0_30px_90px_rgba(0,0,0,0.35)] overflow-hidden"
-            onClick={(event) => event.stopPropagation()}
+            onClick={event => event.stopPropagation()}
           >
             <div className="p-7 md:p-8">
               <div className="flex items-start justify-between gap-4">
@@ -992,7 +1127,9 @@ export default function Settings() {
                     Gerenciar plano
                   </h3>
                   <p className="mt-2 text-[14px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600 max-w-2xl">
-                    Escolha o plano desejado para a clínica. O upgrade está liberado agora e libera os novos limites imediatamente; a cobrança via Stripe entra depois.
+                    Escolha o plano desejado para a clínica. O upgrade está
+                    liberado agora e libera os novos limites imediatamente; a
+                    cobrança via Stripe entra depois.
                   </p>
                 </div>
 
@@ -1029,7 +1166,7 @@ export default function Settings() {
                   </div>
                 ) : planOptions.length ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {planOptions.map((plan) => {
+                    {planOptions.map(plan => {
                       const planKey = normalizePlanKey(plan.name);
                       const selected = selectedPlanKey === planKey;
                       const isCurrentDesired = desiredPlanKey === planKey;
@@ -1081,7 +1218,11 @@ export default function Settings() {
                                 Médicos
                               </p>
                               <p className="mt-2 text-[14px] font-900 font-['Syne'] text-[var(--cc-theme-fg)]">
-                                {formatPlanLimit(plan.max_doctors, "médico", "médicos")}
+                                {formatPlanLimit(
+                                  plan.max_doctors,
+                                  "médico",
+                                  "médicos"
+                                )}
                               </p>
                             </div>
                             <div className="rounded-2xl bg-[var(--cc-theme-card-solid)] border border-[color:var(--cc-theme-card-border)] p-3">
@@ -1089,7 +1230,11 @@ export default function Settings() {
                                 Secretárias
                               </p>
                               <p className="mt-2 text-[14px] font-900 font-['Syne'] text-[var(--cc-theme-fg)]">
-                                {formatPlanLimit(plan.max_secretaries, "vaga", "vagas")}
+                                {formatPlanLimit(
+                                  plan.max_secretaries,
+                                  "vaga",
+                                  "vagas"
+                                )}
                               </p>
                             </div>
                             <div className="rounded-2xl bg-[var(--cc-theme-card-solid)] border border-[color:var(--cc-theme-card-border)] p-3">
@@ -1097,7 +1242,11 @@ export default function Settings() {
                                 Pacientes
                               </p>
                               <p className="mt-2 text-[14px] font-900 font-['Syne'] text-[var(--cc-theme-fg)]">
-                                {formatPlanLimit(plan.max_patients, "paciente", "pacientes")}
+                                {formatPlanLimit(
+                                  plan.max_patients,
+                                  "paciente",
+                                  "pacientes"
+                                )}
                               </p>
                             </div>
                           </div>
@@ -1111,7 +1260,8 @@ export default function Settings() {
                       Nenhum plano disponível
                     </p>
                     <p className="mt-2 text-[13px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
-                      Não conseguimos listar planos agora. Tente novamente em instantes.
+                      Não conseguimos listar planos agora. Tente novamente em
+                      instantes.
                     </p>
                   </div>
                 )}
@@ -1159,7 +1309,6 @@ export default function Settings() {
         clinicName={clinicName || settingsData?.clinicName || "Clínica"}
         canManage={canManageWhatsApp}
         connection={whatsAppConnection.connection}
-        qrCode={whatsAppConnection.qrCode}
         loading={whatsAppConnection.loading}
         isStarting={whatsAppConnection.isStarting}
         pollingActive={whatsAppConnection.pollingActive}

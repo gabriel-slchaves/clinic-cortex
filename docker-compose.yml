@@ -13,8 +13,12 @@ services:
     ports:
       - "3000:3000"
     environment:
+      VITE_APP_ENV: ${VITE_APP_ENV:-local}
       VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
       VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+      VITE_PUBLIC_LANDING_ORIGIN: ${VITE_PUBLIC_LANDING_ORIGIN:-http://localhost:3000}
+      VITE_PUBLIC_APP_ORIGIN: ${VITE_PUBLIC_APP_ORIGIN:-http://app.localhost:3000}
+      VITE_INTERNAL_SERVICE_ORIGIN: ${VITE_INTERNAL_SERVICE_ORIGIN:-}
       WHATSAPP_API_PROXY_TARGET: http://whatsapp-connector:3001
       # Better file watching inside Docker (esp. on Windows/macOS)
       CHOKIDAR_USEPOLLING: "true"
@@ -35,10 +39,12 @@ services:
     ports:
       - "${N8N_PORT:-5678}:5678"
     environment:
-      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_HOST: ${N8N_HOST:-n8n}
       N8N_PORT: 5678
       N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
-      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://n8n:5678/}
+      SUPABASE_URL: ${VITE_SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
       TZ: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
     restart: unless-stopped
@@ -56,23 +62,32 @@ services:
     ports:
       - "${WHATSAPP_SERVICE_PORT:-3001}:3001"
     environment:
+      APP_ENV: ${APP_ENV:-local}
       SUPABASE_URL: ${VITE_SUPABASE_URL}
       SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:-http://app.localhost:3000}
+      PUBLIC_WA_ORIGIN: ${PUBLIC_WA_ORIGIN:-http://localhost:3001}
       WHATSAPP_SERVICE_PORT: 3001
-      WHATSAPP_SESSION_DIR: /data/sessions
       N8N_MESSAGE_WEBHOOK_URL: ${N8N_MESSAGE_WEBHOOK_URL:-http://n8n:5678/webhook/cliniccortex-whatsapp}
       N8N_MESSAGE_WEBHOOK_TIMEOUT_MS: ${N8N_MESSAGE_WEBHOOK_TIMEOUT_MS:-15000}
       N8N_MESSAGE_WEBHOOK_SECRET: ${N8N_MESSAGE_WEBHOOK_SECRET:-}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v23.0}
+      META_EMBEDDED_SIGNUP_CONFIG_ID: ${META_EMBEDDED_SIGNUP_CONFIG_ID:-}
+      META_EMBEDDED_SIGNUP_REDIRECT_URI: ${META_EMBEDDED_SIGNUP_REDIRECT_URI:-}
+      META_EMBEDDED_SIGNUP_SCOPES: ${META_EMBEDDED_SIGNUP_SCOPES:-business_management,whatsapp_business_management,whatsapp_business_messaging}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
+      META_WEBHOOK_APP_SECRET: ${META_WEBHOOK_APP_SECRET:-}
+      META_HEALTHCHECK_INTERVAL_MS: ${META_HEALTHCHECK_INTERVAL_MS:-300000}
+      WHATSAPP_TOKEN_ENCRYPTION_KEY: ${WHATSAPP_TOKEN_ENCRYPTION_KEY:-}
     volumes:
       - .:/app
       - node_modules:/app/node_modules
-      - whatsapp_sessions:/data/sessions
 
 volumes:
   node_modules:
     name: cliniccortex_node_modules
   n8n_data:
     name: cliniccortex_n8n_data
-  whatsapp_sessions:
-    name: cliniccortex_whatsapp_sessions

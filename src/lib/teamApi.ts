@@ -1,4 +1,5 @@
 import { type AreaId } from "@/lib/clinicAreas";
+import { getInternalServiceUrl } from "@/lib/internalServiceOrigin";
 import { supabase } from "@/lib/supabase";
 
 export type TeamAccessLevel = "owner" | "doctor_admin" | "doctor" | "secretary";
@@ -88,7 +89,7 @@ async function getAuthHeaders() {
   } = await supabase.auth.getSession();
 
   if (!session?.access_token) {
-    throw new TeamApiError("Sessão expirada. Faça login novamente.", 401);
+    throw new TeamApiError("Sua sessão expirou. Faça login novamente.", 401);
   }
 
   return {
@@ -101,7 +102,7 @@ async function request<T>(path: string, init?: RequestInit) {
   let response: Response;
 
   try {
-    response = await fetch(`/api/team${path}`, {
+    response = await fetch(getInternalServiceUrl("team", path), {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -117,11 +118,28 @@ async function request<T>(path: string, init?: RequestInit) {
   }
 
   const raw = await response.text();
-  const payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+  let payload: Record<string, unknown> = {};
+
+  if (raw) {
+    try {
+      payload = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      payload = {};
+    }
+  }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new TeamApiError("Sua sessão expirou. Faça login novamente.", 401);
+    }
+
+    const message = String(payload.error || "Falha ao comunicar com o serviço de equipe.");
+    if (message === "Sessão inválida." || message === "Sessão do Supabase inválida.") {
+      throw new TeamApiError("Sua sessão expirou. Faça login novamente.", 401);
+    }
+
     throw new TeamApiError(
-      String(payload.error || "Falha ao comunicar com o serviço de equipe."),
+      message,
       response.status
     );
   }

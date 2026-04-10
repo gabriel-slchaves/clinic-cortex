@@ -1,34 +1,77 @@
 import { supabase } from "@/lib/supabase";
+import { getInternalServiceUrl } from "@/lib/internalServiceOrigin";
 
-export type WhatsAppConnectionStatus =
-  | "idle"
-  | "creating"
-  | "qr_pending"
-  | "connected"
-  | "error";
+export type WhatsAppOperationalStatus =
+  | "not_connected"
+  | "onboarding"
+  | "active"
+  | "action_required"
+  | "disconnected";
+export type WhatsAppOnboardingStatus =
+  | "not_started"
+  | "embedded_signup_started"
+  | "authorization_granted"
+  | "credentials_received"
+  | "completed"
+  | "failed";
+export type WhatsAppVerificationStatus =
+  | "unknown"
+  | "pending"
+  | "verified"
+  | "restricted"
+  | "failed";
+export type WhatsAppWebhookStatus =
+  | "not_configured"
+  | "verify_pending"
+  | "verified"
+  | "subscribed"
+  | "failed";
 
 export type WhatsAppConnectionResponse = {
   connectionId: string;
   clinicId: string;
-  status: WhatsAppConnectionStatus;
-  connectedAt: string | null;
+  provider: "meta_cloud_api";
+  operationalStatus: WhatsAppOperationalStatus;
+  onboardingStatus: WhatsAppOnboardingStatus;
+  verificationStatus: WhatsAppVerificationStatus;
+  webhookStatus: WhatsAppWebhookStatus;
+  businessAccountId: string | null;
+  wabaId: string | null;
+  phoneNumberId: string | null;
+  displayPhoneNumber: string | null;
+  verifiedName: string | null;
   lastError: string | null;
-  phoneNumber?: string | null;
-  lastSeenAt?: string | null;
-  manualActionRequired?: boolean;
-  isRecovering?: boolean;
-  recoveryAttemptCount?: number;
-  nextRetryAt?: string | null;
-  lastEventCode?: string | null;
-  lastEventMessage?: string | null;
-  cooldownUntil?: string | null;
-  pairingBlocked?: boolean;
-  reconnectMode?: "connected" | "recover" | "pairing_qr" | "cooldown" | "manual_action";
-  manualActionRequiredReason?: string | null;
+  actionRequiredReason: string | null;
+  lastEvent: {
+    code: string;
+    message: string;
+    severity: "info" | "warning" | "critical";
+    occurredAt: string | null;
+  } | null;
 };
 
-export type WhatsAppQrResponse = WhatsAppConnectionResponse & {
-  qrCode: string | null;
+export type WhatsAppOnboardingSessionResponse = {
+  connection: WhatsAppConnectionResponse;
+  state: string;
+  redirectUri: string;
+  launchUrl: string;
+  appId: string;
+  configId: string;
+};
+
+export type CompleteEmbeddedSignupInput = {
+  state: string;
+  authorizationCode?: string;
+  accessToken?: string;
+  businessAccountId?: string | null;
+  wabaId?: string | null;
+  phoneNumberId?: string | null;
+  displayPhoneNumber?: string | null;
+  verifiedName?: string | null;
+  grantedScopes?: string[] | null;
+  metadata?: Record<string, unknown> | null;
+  tokenExpiresAt?: string | null;
+  tokenExpiresInSeconds?: number | null;
 };
 
 export class WhatsAppApiError extends Error {
@@ -60,7 +103,7 @@ async function request<T>(path: string, init?: RequestInit) {
   let response: Response;
 
   try {
-    response = await fetch(`/api/whatsapp${path}`, {
+    response = await fetch(getInternalServiceUrl("whatsapp", path), {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -70,7 +113,7 @@ async function request<T>(path: string, init?: RequestInit) {
     });
   } catch {
     throw new WhatsAppApiError(
-      "Serviço de conexão WhatsApp indisponível. Verifique se o conector interno está ativo e configurado corretamente.",
+      "Serviço oficial de conexão WhatsApp indisponível. Verifique se o conector interno está ativo e configurado corretamente.",
       503
     );
   }
@@ -95,30 +138,10 @@ export function createWhatsAppConnection(clinicId: string) {
   });
 }
 
-export function startWhatsAppConnection(connectionId: string) {
-  return request<WhatsAppConnectionResponse>(`/connections/${encodeURIComponent(connectionId)}/start`, {
-    method: "POST",
-  });
-}
-
-export function getWhatsAppConnectionQr(connectionId: string) {
-  return request<WhatsAppQrResponse>(`/connections/${encodeURIComponent(connectionId)}/qr`);
-}
-
-export function getWhatsAppConnectionStatus(connectionId: string) {
-  return request<WhatsAppConnectionResponse>(
-    `/connections/${encodeURIComponent(connectionId)}/status`
-  );
-}
-
 export function getWhatsAppConnectionByClinic(clinicId: string) {
   return request<WhatsAppConnectionResponse>(
     `/connections/by-clinic/${encodeURIComponent(clinicId)}`
   );
-}
-
-export function getWhatsAppConnectionQrByClinic(clinicId: string) {
-  return request<WhatsAppQrResponse>(`/connections/by-clinic/${encodeURIComponent(clinicId)}/qr`);
 }
 
 export function getWhatsAppConnectionStatusByClinic(clinicId: string) {
@@ -127,11 +150,28 @@ export function getWhatsAppConnectionStatusByClinic(clinicId: string) {
   );
 }
 
-export function startWhatsAppConnectionByClinic(clinicId: string) {
-  return request<WhatsAppConnectionResponse>(
-    `/connections/by-clinic/${encodeURIComponent(clinicId)}/start`,
+export function createWhatsAppEmbeddedSignupSessionByClinic(
+  clinicId: string,
+  clinicName?: string | null
+) {
+  return request<WhatsAppOnboardingSessionResponse>(
+    `/connections/by-clinic/${encodeURIComponent(clinicId)}/onboarding/session`,
     {
       method: "POST",
+      body: JSON.stringify({ clinicName: clinicName ?? null }),
+    }
+  );
+}
+
+export function completeWhatsAppEmbeddedSignup(
+  connectionId: string,
+  payload: CompleteEmbeddedSignupInput
+) {
+  return request<WhatsAppConnectionResponse>(
+    `/connections/${encodeURIComponent(connectionId)}/onboarding/complete`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
     }
   );
 }

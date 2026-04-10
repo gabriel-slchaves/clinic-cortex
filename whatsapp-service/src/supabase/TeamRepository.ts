@@ -1,6 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { HttpError } from "../errors.js";
 
+type TeamServiceLogger = {
+  warn?: (payload: Record<string, unknown>, message: string) => void;
+  error?: (payload: Record<string, unknown>, message: string) => void;
+};
+
 type MembershipRow = {
   id: string;
   clinic_id: string;
@@ -38,6 +43,11 @@ type TeamMemberMetadata = {
   specialties: string[];
   licenseCode: string | null;
   memberKind: TeamMemberKind;
+};
+
+type ClinicTeamDefaults = {
+  areaId: string | null;
+  specialties: string[];
 };
 
 type ViewerMembership = {
@@ -86,6 +96,8 @@ const DEFAULT_PLAN_ROWS: PlanRow[] = [
   },
 ];
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function normalizeText(value: unknown) {
   const next = String(value || "").trim();
   return next || null;
@@ -105,6 +117,15 @@ function normalizeSpecialties(value: unknown) {
         .filter(Boolean)
     )
   );
+}
+
+function isValidEmail(value: string | null) {
+  return Boolean(value && EMAIL_REGEX.test(value));
+}
+
+function emailDomain(value: string | null) {
+  if (!value || !value.includes("@")) return null;
+  return value.split("@")[1] || null;
 }
 
 function memberKindFromAccessLevel(accessLevel: TeamAccessLevel): TeamMemberKind {
@@ -207,15 +228,65 @@ function normalizePlanKey(value: string | null | undefined) {
   return normalized;
 }
 
+function normalizeTeamMetadataFromInput(args: {
+  accessLevel: TeamAccessLevel;
+  areaId: unknown;
+  specialties: unknown;
+  licenseCode: unknown;
+  fullName: string | null;
+  email: string | null;
+}): TeamMemberMetadata {
+  const memberKind = memberKindFromAccessLevel(args.accessLevel);
+  const isSecretary = memberKind === "secretary";
+
+  return {
+    fullName: args.fullName,
+    email: args.email,
+    areaId: isSecretary ? null : normalizeText(args.areaId),
+    specialties: isSecretary ? [] : normalizeSpecialties(args.specialties),
+    licenseCode: isSecretary ? null : normalizeText(args.licenseCode),
+    memberKind,
+  };
+}
+
+function applyClinicDefaultsToMetadata(
+  metadata: TeamMemberMetadata,
+  defaults: ClinicTeamDefaults
+): TeamMemberMetadata {
+  if (metadata.memberKind === "secretary") {
+    return {
+      ...metadata,
+      areaId: null,
+      specialties: [],
+      licenseCode: null,
+    };
+  }
+
+  const nextAreaId = metadata.areaId || defaults.areaId;
+  const canReuseClinicSpecialties =
+    metadata.specialties.length === 0 &&
+    defaults.specialties.length > 0 &&
+    (!metadata.areaId || metadata.areaId === defaults.areaId);
+
+  return {
+    ...metadata,
+    areaId: nextAreaId,
+    specialties: canReuseClinicSpecialties ? defaults.specialties : metadata.specialties,
+  };
+}
+
 export class TeamRepository {
   private readonly admin;
+  private readonly logger?: TeamServiceLogger;
 
   constructor({
     supabaseUrl,
     supabaseServiceRoleKey,
+    logger,
   }: {
     supabaseUrl: string;
     supabaseServiceRoleKey: string;
+    logger?: TeamServiceLogger;
   }) {
     this.admin = createClient(supabaseUrl, supabaseServiceRoleKey, {
       auth: {
@@ -223,15 +294,55 @@ export class TeamRepository {
         persistSession: false,
       },
     });
+    this.logger = logger;
   }
 
   async authenticateAccessToken(accessToken: string) {
-    const { data, error } = await this.admin.auth.getUser(accessToken);
-    if (error || !data.user) {
-      throw new HttpError(401, "Sessão inválida.");
-    }
+    try {
+      const { data, error } = await this.admin.auth.getUser(accessToken);
+      if (error) {
+        const status = Number((error as any)?.status || 0);
+        const message = String((error as any)?.message || "").toLowerCase();
+        const invalidSession =
+          status === 401 ||
+          status === 403 ||
+          message.includes("session") ||
+          message.includes("token") ||
+          message.includes("jwt");
 
-    return data.user;
+        if (invalidSession) {
+          throw new HttpError(401, "Sua sessão expirou. Faça login novamente.", {
+            category: "auth_session",
+          });
+        }
+
+        throw new HttpError(503, "Serviço interno de autenticação indisponível. Tente novamente.", {
+          category: "service_unavailable",
+          source: "supabase_auth",
+          reason: String((error as any)?.message || "unknown"),
+        });
+      }
+
+      if (!data.user) {
+        throw new HttpError(503, "Serviço interno de autenticação indisponível. Tente novamente.", {
+          category: "service_unavailable",
+          source: "supabase_auth",
+          reason: "missing_user_without_error",
+        });
+      }
+
+      return data.user;
+    } catch (error) {
+      if (error instanceof HttpError) {
+        throw error;
+      }
+
+      throw new HttpError(503, "Serviço interno de autenticação indisponível. Tente novamente.", {
+        category: "service_unavailable",
+        source: "supabase_auth",
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   async ensureClinicAccess(userId: string, clinicId: string) {
@@ -260,8 +371,11 @@ export class TeamRepository {
 
   async listClinicMembers(clinicId: string, viewerUserId: string) {
     const viewerMembership = await this.ensureClinicAccess(viewerUserId, clinicId);
-    const memberships = await this.getClinicMemberships(clinicId);
-    const members = await this.serializeMembers(clinicId, memberships);
+    const [memberships, clinicDefaults] = await Promise.all([
+      this.getClinicMemberships(clinicId),
+      this.getClinicTeamDefaults(clinicId),
+    ]);
+    const members = await this.serializeMembers(clinicId, memberships, clinicDefaults);
     const plan = await this.getClinicPlanSummary(clinicId, members);
 
     return {
@@ -280,34 +394,67 @@ export class TeamRepository {
     const normalizedEmail = normalizeEmail(input.email);
     const normalizedName = normalizeText(input.fullName);
     if (!normalizedEmail) {
-      throw new HttpError(400, "Informe um e-mail para criar o usuário.");
+      throw new HttpError(400, "Informe um e-mail para criar o usuário.", {
+        category: "validation",
+        field: "email",
+      });
+    }
+    if (!isValidEmail(normalizedEmail)) {
+      throw new HttpError(400, "Informe um e-mail válido para criar o usuário.", {
+        category: "validation",
+        field: "email",
+      });
     }
     if (!normalizedName) {
-      throw new HttpError(400, "Informe o nome do membro da clínica.");
+      throw new HttpError(400, "Informe o nome do membro da clínica.", {
+        category: "validation",
+        field: "fullName",
+      });
+    }
+    if (input.accessLevel === "doctor_admin") {
+      throw new HttpError(
+        409,
+        "A clínica já possui um único admin. Novos usuários devem ser profissionais ou secretárias.",
+        {
+          category: "admin_policy",
+        }
+      );
     }
 
-    const memberships = await this.getClinicMemberships(clinicId);
-    const members = await this.serializeMembers(clinicId, memberships);
+    const [memberships, clinicDefaults] = await Promise.all([
+      this.getClinicMemberships(clinicId),
+      this.getClinicTeamDefaults(clinicId),
+    ]);
+    const members = await this.serializeMembers(clinicId, memberships, clinicDefaults);
     await this.ensureCapacity(clinicId, members, memberKindFromAccessLevel(input.accessLevel));
 
     const authUser = await this.ensureAuthUser({
       email: normalizedEmail,
       fullName: normalizedName,
+      clinicId,
     });
 
     const existingMembership = await this.findMembershipByClinicAndUser(clinicId, authUser.id);
     if (existingMembership && !existingMembership.deleted_at) {
-      throw new HttpError(409, "Este usuário já faz parte desta clínica.");
+      throw new HttpError(409, "Este usuário já faz parte desta clínica.", {
+        category: "membership_conflict",
+      });
     }
 
-    const metadata: TeamMemberMetadata = {
+    const metadata = normalizeTeamMetadataFromInput({
+      accessLevel: input.accessLevel,
       fullName: normalizedName,
       email: normalizedEmail,
-      areaId: normalizeText(input.areaId),
-      specialties: normalizeSpecialties(input.specialties),
-      licenseCode: normalizeText(input.licenseCode),
-      memberKind: memberKindFromAccessLevel(input.accessLevel),
-    };
+      areaId: input.areaId,
+      specialties: input.specialties,
+      licenseCode: input.licenseCode,
+    });
+    if (metadata.memberKind !== "secretary" && !metadata.areaId) {
+      throw new HttpError(400, "Selecione a área de atuação do profissional.", {
+        category: "validation",
+        field: "areaId",
+      });
+    }
 
     await this.syncUserProfileAndMetadata(authUser.id, {
       fullName: normalizedName,
@@ -325,7 +472,7 @@ export class TeamRepository {
           isAdmin,
         });
 
-    return this.serializeMember(clinicId, membership);
+    return this.serializeMember(clinicId, membership, clinicDefaults);
   }
 
   async listAvailablePlans(clinicId: string, viewerUserId: string) {
@@ -410,7 +557,10 @@ export class TeamRepository {
   ) {
     await this.ensureClinicOwnerAccess(viewerUserId, clinicId);
 
-    const membership = await this.getMembershipById(clinicId, membershipId);
+    const [membership, clinicDefaults] = await Promise.all([
+      this.getMembershipById(clinicId, membershipId),
+      this.getClinicTeamDefaults(clinicId),
+    ]);
     if (!membership) {
       throw new HttpError(404, "Membro da clínica não encontrado.");
     }
@@ -422,30 +572,40 @@ export class TeamRepository {
 
     const normalizedName = normalizeText(input.fullName);
     if (!normalizedName) {
-      throw new HttpError(400, "Informe o nome do membro da clínica.");
+      throw new HttpError(400, "Informe o nome do membro da clínica.", {
+        category: "validation",
+        field: "fullName",
+      });
     }
 
-    const currentMetadata = readClinicMetadata(authUser, clinicId);
+    const currentMetadata = applyClinicDefaultsToMetadata(readClinicMetadata(authUser, clinicId), clinicDefaults);
+    const currentAccessLevel = accessLevelFromMembership(membership, currentMetadata);
     const nextAccessLevel =
       membership.role === "owner"
         ? "owner"
-        : (input.accessLevel && input.accessLevel !== "owner" ? input.accessLevel : accessLevelFromMembership(membership, currentMetadata));
+        : this.resolveNextAccessLevel(currentAccessLevel, input.accessLevel);
 
-    const nextMetadata: TeamMemberMetadata = {
+    const nextMetadata = normalizeTeamMetadataFromInput({
+      accessLevel: nextAccessLevel,
       fullName: normalizedName,
       email: normalizeEmail(authUser.email || currentMetadata.email),
-      areaId: normalizeText(input.areaId),
-      specialties: normalizeSpecialties(input.specialties),
-      licenseCode: normalizeText(input.licenseCode),
-      memberKind:
-        membership.role === "owner"
-          ? currentMetadata.memberKind || "doctor"
-          : memberKindFromAccessLevel(nextAccessLevel),
-    };
+      areaId: input.areaId,
+      specialties: input.specialties,
+      licenseCode: input.licenseCode,
+    });
+    if (membership.role === "owner") {
+      nextMetadata.memberKind = "doctor";
+    }
+    if (nextMetadata.memberKind !== "secretary" && !nextMetadata.areaId) {
+      throw new HttpError(400, "Selecione a área de atuação do profissional.", {
+        category: "validation",
+        field: "areaId",
+      });
+    }
 
     if (membership.role !== "owner" && nextAccessLevel !== "owner") {
       const memberships = await this.getClinicMemberships(clinicId);
-      const members = await this.serializeMembers(clinicId, memberships);
+      const members = await this.serializeMembers(clinicId, memberships, clinicDefaults);
       await this.ensureCapacity(clinicId, members, nextMetadata.memberKind, membership.id);
 
       const { role, isAdmin } = membershipRoleFromAccessLevel(nextAccessLevel);
@@ -463,7 +623,38 @@ export class TeamRepository {
       throw new HttpError(404, "Não foi possível recarregar o membro da clínica.");
     }
 
-    return this.serializeMember(clinicId, updated);
+    return this.serializeMember(clinicId, updated, clinicDefaults);
+  }
+
+  private resolveNextAccessLevel(
+    currentAccessLevel: TeamAccessLevel,
+    requestedAccessLevel?: TeamAccessLevel
+  ): TeamAccessLevel {
+    if (!requestedAccessLevel) {
+      return currentAccessLevel;
+    }
+
+    if (requestedAccessLevel === "owner") {
+      throw new HttpError(
+        409,
+        "A clínica já possui um único admin. Novos usuários devem ser profissionais ou secretárias.",
+        {
+          category: "admin_policy",
+        }
+      );
+    }
+
+    if (requestedAccessLevel === "doctor_admin" && currentAccessLevel !== "doctor_admin") {
+      throw new HttpError(
+        409,
+        "A clínica já possui um único admin. Novos usuários devem ser profissionais ou secretárias.",
+        {
+          category: "admin_policy",
+        }
+      );
+    }
+
+    return requestedAccessLevel;
   }
 
   private async getViewerMembership(userId: string, clinicId: string) {
@@ -629,37 +820,72 @@ export class TeamRepository {
     return data.user;
   }
 
-  private async serializeMembers(clinicId: string, memberships: MembershipRow[]) {
+  private async getClinicTeamDefaults(clinicId: string): Promise<ClinicTeamDefaults> {
+    const { data, error } = await this.admin
+      .from("clinics")
+      .select("assistant_area,assistant_specialties")
+      .eq("id", clinicId)
+      .limit(1)
+      .maybeSingle<{ assistant_area: string | null; assistant_specialties: string[] | null }>();
+
+    if (error) {
+      throw new HttpError(500, "Não foi possível carregar os dados-base da clínica.", error);
+    }
+
+    return {
+      areaId: normalizeText(data?.assistant_area),
+      specialties: normalizeSpecialties(data?.assistant_specialties || []),
+    };
+  }
+
+  private async serializeMembers(
+    clinicId: string,
+    memberships: MembershipRow[],
+    clinicDefaults?: ClinicTeamDefaults
+  ) {
     const userIds = memberships.map((membership) => membership.user_id);
     const profilesMap = await this.getProfilesMap(userIds);
     const authUsers = await Promise.all(
       userIds.map(async (userId) => [userId, await this.getUserById(userId)] as const)
     );
     const authUsersMap = new Map(authUsers);
+    const effectiveClinicDefaults = clinicDefaults || (await this.getClinicTeamDefaults(clinicId));
 
     return memberships.map((membership) => {
       const authUser = authUsersMap.get(membership.user_id);
       const profile = profilesMap.get(membership.user_id) || null;
-      return this.toSerializedMember(clinicId, membership, authUser, profile);
+      return this.toSerializedMember(clinicId, membership, authUser, profile, effectiveClinicDefaults);
     });
   }
 
-  private async serializeMember(clinicId: string, membership: MembershipRow) {
+  private async serializeMember(
+    clinicId: string,
+    membership: MembershipRow,
+    clinicDefaults?: ClinicTeamDefaults
+  ) {
     const [authUser, profilesMap] = await Promise.all([
       this.getUserById(membership.user_id),
       this.getProfilesMap([membership.user_id]),
     ]);
+    const effectiveClinicDefaults = clinicDefaults || (await this.getClinicTeamDefaults(clinicId));
 
     return this.toSerializedMember(
       clinicId,
       membership,
       authUser,
-      profilesMap.get(membership.user_id) || null
+      profilesMap.get(membership.user_id) || null,
+      effectiveClinicDefaults
     );
   }
 
-  private toSerializedMember(clinicId: string, membership: MembershipRow, authUser: any, profile: ProfileRow | null) {
-    const metadata = readClinicMetadata(authUser, clinicId);
+  private toSerializedMember(
+    clinicId: string,
+    membership: MembershipRow,
+    authUser: any,
+    profile: ProfileRow | null,
+    clinicDefaults: ClinicTeamDefaults
+  ) {
+    const metadata = applyClinicDefaultsToMetadata(readClinicMetadata(authUser, clinicId), clinicDefaults);
     const accessLevel = accessLevelFromMembership(membership, metadata);
     const fullName =
       normalizeText(profile?.full_name) ||
@@ -774,9 +1000,11 @@ export class TeamRepository {
   private async ensureAuthUser({
     email,
     fullName,
+    clinicId,
   }: {
     email: string;
     fullName: string;
+    clinicId: string;
   }) {
     const existingUser = await this.findUserByEmail(email);
     if (existingUser) return existingUser;
@@ -788,7 +1016,19 @@ export class TeamRepository {
     });
 
     if (error || !data.user) {
-      throw new HttpError(500, "Não foi possível criar o convite do usuário.", error);
+      this.logger?.error?.(
+        {
+          category: "invite_failure",
+          clinicId,
+          emailDomain: emailDomain(email),
+          status: Number((error as any)?.status || 0) || null,
+          error: error instanceof Error ? error.message : String(error || "unknown"),
+        },
+        "Failed to invite clinic team member"
+      );
+      throw new HttpError(500, "Não foi possível criar o convite do usuário.", {
+        category: "invite_failure",
+      });
     }
 
     return data.user;

@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Link2,
-  QrCode,
   RefreshCcw,
   Rocket,
 } from "lucide-react";
@@ -36,116 +35,55 @@ export default function Step7Launch({
 
   const title = "Conecte seu WhatsApp";
   const subtitle =
-    "No próximo passo, você vai escanear um QR Code para conectar o número da clínica e ativar a secretária de IA.";
+    "Agora a conexão é feita pela Meta Cloud API oficial. Você autoriza a ClinicCortex, vincula o número da clínica e elimina QR Code, sessão local e reconexões frágeis.";
 
   const canFinish = useMemo(() => Boolean(clinicId), [clinicId]);
   const connection = whatsAppConnection.connection;
-  const connectionStatus = connection?.status || "idle";
-  const qrCode = whatsAppConnection.qrCode;
-  const qrLoading = whatsAppConnection.loading;
-  const qrError = whatsAppConnection.error;
-  const isStartingConnection = whatsAppConnection.isStarting;
-  const pollingActive = whatsAppConnection.pollingActive;
-  const isConnected = connectionStatus === "connected";
-  const isPairingBlocked = Boolean(
-    connection?.pairingBlocked &&
-      (!connection?.cooldownUntil ||
-        (Number.isFinite(Date.parse(String(connection.cooldownUntil))) &&
-          Date.parse(String(connection.cooldownUntil)) > Date.now()))
-  );
+  const isConnected = connection?.operationalStatus === "active";
+  const isOnboarding = connection?.operationalStatus === "onboarding";
   const actionLabel = !connection
-    ? "Gerar QR Code"
-    : isPairingBlocked
-      ? "Aguardando liberação"
-      : connection.manualActionRequired
-      ? "Gerar novo QR Code"
-      : connectionStatus === "connected"
-        ? "Reconectar"
-        : connectionStatus === "qr_pending"
-          ? "Atualizar QR Code"
-          : connection?.isRecovering || connectionStatus === "creating"
-            ? "Forçar nova tentativa"
-            : "Gerar QR Code";
+    ? "Conectar com Meta"
+    : isConnected
+      ? "Reconectar via Meta"
+      : isOnboarding
+        ? "Continuar onboarding"
+        : "Conectar com Meta";
 
   const statusMeta = useMemo(() => {
-    if (connectionStatus === "connected") {
+    if (isConnected) {
       return {
         badgeLabel: "Conectado",
-        badgeClass:
-          "text-[#118C5F] bg-[#E8F5ED] border border-[#118C5F]/15",
+        badgeClass: "text-[#118C5F] bg-[#E8F5ED] border border-[#118C5F]/15",
         statusLabel: "Conectado",
-        statusClass:
-          "text-[#118C5F] bg-[#E8F5ED] border border-[#118C5F]/15",
-        title: "WhatsApp conectado com sucesso",
+        statusClass: "text-[#118C5F] bg-[#E8F5ED] border border-[#118C5F]/15",
+        title: "WhatsApp oficial conectado com sucesso",
         description:
-          "A clínica já está autenticada. Se você quiser renovar a sessão, pode gerar um novo QR Code.",
+          "A clínica já está autenticada na Meta Cloud API. As próximas mensagens entram por webhook e as respostas saem pela Graph API.",
       };
     }
 
-    if (isPairingBlocked) {
+    if (isOnboarding) {
       return {
-        badgeLabel: "Em pausa",
-        badgeClass:
-          "text-[#9A6B00] bg-[#FFF7DB] border border-[#E9B949]/30",
-        statusLabel: "Em pausa",
-        statusClass:
-          "text-[#9A6B00] bg-[#FFF7DB] border border-[#E9B949]/30",
-        title: "Novo pareamento pausado temporariamente",
-        description: connection?.cooldownUntil
-          ? `O WhatsApp bloqueou temporariamente novas conexões. Aguarde até ${new Date(
-              connection.cooldownUntil
-            ).toLocaleString("pt-BR")} antes de gerar outro QR Code.`
-          : "O WhatsApp bloqueou temporariamente novas conexões. Aguarde um pouco antes de tentar novamente.",
+        badgeLabel: "Em onboarding",
+        badgeClass: "text-[#9A6B00] bg-[#FFF7DB] border border-[#E9B949]/30",
+        statusLabel: "Em onboarding",
+        statusClass: "text-[#9A6B00] bg-[#FFF7DB] border border-[#E9B949]/30",
+        title: "Finalize a autorização oficial da Meta",
+        description:
+          "Abra a janela da Meta, escolha os ativos da clínica e conclua a autorização oficial do número.",
       };
     }
 
-    if (connectionStatus === "qr_pending") {
+    if (connection?.operationalStatus === "action_required") {
       return {
-        badgeLabel: connection?.manualActionRequired ? "Novo QR necessário" : "QR disponível",
-        badgeClass:
-          "text-[#9A6B00] bg-[#FFF7DB] border border-[#E9B949]/30",
-        statusLabel: connection?.manualActionRequired ? "Novo QR necessário" : "QR disponível",
-        statusClass:
-          "text-[#9A6B00] bg-[#FFF7DB] border border-[#E9B949]/30",
-        title: "Escaneie o QR Code com o WhatsApp da clínica",
+        badgeLabel: "Ação necessária",
+        badgeClass: "text-[#C73A3A] bg-[#FFF1F1] border border-[#F2C0C0]",
+        statusLabel: "Ação necessária",
+        statusClass: "text-[#C73A3A] bg-[#FFF1F1] border border-[#F2C0C0]",
+        title: "A conexão oficial precisa de atenção",
         description:
-          "Abra o WhatsApp no celular da clínica, vá em Dispositivos conectados e escaneie o código exibido aqui.",
-      };
-    }
-
-    if (connectionStatus === "creating") {
-      return {
-        badgeLabel: connection?.isRecovering ? "Reconectando" : "Conectando",
-        badgeClass:
-          "text-[#8A5A00] bg-[#FFF4DB] border border-[#E4B04A]/30",
-        statusLabel: connection?.isRecovering ? "Reconectando" : "Conectando",
-        statusClass:
-          "text-[#8A5A00] bg-[#FFF4DB] border border-[#E4B04A]/30",
-        title: connection?.isRecovering
-          ? "Recuperação automática em andamento"
-          : "Preparando uma nova sessão do WhatsApp",
-        description:
-          connection?.isRecovering
-            ? "O sistema está tentando recuperar a sessão salva da clínica. Se isso não for possível, você verá o próximo QR Code aqui."
-            : "Estamos iniciando a conexão e aguardando o QR Code ficar disponível.",
-      };
-    }
-
-    if (connectionStatus === "error") {
-      return {
-        badgeLabel: connection?.manualActionRequired ? "Ação necessária" : "Sem conexão",
-        badgeClass:
-          "text-[#C73A3A] bg-[#FFF1F1] border border-[#F2C0C0]",
-        statusLabel: connection?.manualActionRequired ? "Ação necessária" : "Sem conexão",
-        statusClass:
-          "text-[#C73A3A] bg-[#FFF1F1] border border-[#F2C0C0]",
-        title: connection?.manualActionRequired
-          ? "A sessão precisa de nova conexão"
-          : "Não foi possível concluir a conexão",
-        description:
-          connection?.manualActionRequired
-            ? "A recuperação automática foi esgotada ou a sessão foi invalidada. Gere um novo QR Code quando quiser reconectar."
-            : "Você pode tentar gerar o QR Code novamente. O onboarding continua liberado mesmo sem conectar agora.",
+          connection.lastError ||
+          "O onboarding oficial precisa ser refeito para restabelecer o número da clínica.",
       };
     }
 
@@ -154,18 +92,18 @@ export default function Step7Launch({
       badgeClass: "text-[#C73A3A] bg-[#FFF1F1] border border-[#F2C0C0]",
       statusLabel: "Sem conexão",
       statusClass: "text-[#C73A3A] bg-[#FFF1F1] border border-[#F2C0C0]",
-      title: "Nenhuma sessão conectada",
+      title: "Nenhuma conta oficial conectada",
       description:
-        "Gere o QR Code quando quiser conectar o número da clínica a esta conta do ClinicCortex.",
+        "Clique para abrir o Embedded Signup da Meta e vincular a conta oficial da clínica.",
     };
-  }, [connection, connectionStatus, isPairingBlocked]);
+  }, [connection, isConnected, isOnboarding]);
 
   const handleSignOut = async () => {
     await signOutSession();
     navigateToAppPath("/login");
   };
 
-  const startQrFlow = async () => {
+  const startMetaFlow = async () => {
     await whatsAppConnection.startConnection();
   };
 
@@ -183,19 +121,24 @@ export default function Step7Launch({
         onboarding_completed_at: new Date().toISOString(),
       };
 
-      const { error: updateError } = await supabase.from("clinics").update(payload).eq("id", clinicId);
+      const { error: updateError } = await supabase
+        .from("clinics")
+        .update(payload)
+        .eq("id", clinicId);
       if (updateError) {
-        if (import.meta.env.DEV) console.warn("[Onboarding] step7 save error:", updateError);
-        setFinishError("Não foi possível finalizar o onboarding. Tente novamente.");
+        setFinishError(
+          "Não foi possível finalizar o onboarding. Tente novamente."
+        );
         setSaving(false);
         return;
       }
 
       setSaving(false);
       setTakeoffOpen(true);
-    } catch (e) {
-      if (import.meta.env.DEV) console.warn("[Onboarding] step7 unexpected:", e);
-      setFinishError("Não foi possível finalizar o onboarding. Tente novamente.");
+    } catch {
+      setFinishError(
+        "Não foi possível finalizar o onboarding. Tente novamente."
+      );
       setSaving(false);
     }
   };
@@ -207,7 +150,12 @@ export default function Step7Launch({
 
   return (
     <div className="min-h-[100dvh] bg-[#E9FDF4] text-[#002115] overflow-x-hidden">
-      <OnboardingHeader step={step} totalSteps={7} progress={progress} onExit={handleSignOut} />
+      <OnboardingHeader
+        step={step}
+        totalSteps={7}
+        progress={progress}
+        onExit={handleSignOut}
+      />
 
       <main className="pt-20 md:pt-24 pb-28 md:pb-32">
         <div className="max-w-6xl mx-auto px-5 md:px-12 py-10 md:py-14">
@@ -229,23 +177,28 @@ export default function Step7Launch({
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-2xl bg-[#E8F5ED] flex items-center justify-center border border-[#025940]/[0.12]">
-                      <QrCode className="w-6 h-6 text-[#118C5F]" strokeWidth={2.2} />
+                      <Link2
+                        className="w-6 h-6 text-[#118C5F]"
+                        strokeWidth={2.2}
+                      />
                     </div>
                     <div>
                       <div className="text-[11px] font-900 text-[#062B1D]/35 uppercase tracking-[0.25em] font-['Space_Grotesk']">
-                        Conexao WhatsApp
+                        Conexao Oficial
                       </div>
-                      <div className="text-xl font-800 text-[#062B1D] font-['Syne']">QR Code</div>
+                      <div className="text-xl font-800 text-[#062B1D] font-['Syne']">
+                        Meta Cloud API
+                      </div>
                     </div>
                   </div>
                   <span
                     className={`inline-flex items-center gap-2 text-[11px] font-900 uppercase tracking-[0.22em] px-3 py-2 rounded-full font-['Space_Grotesk'] ${statusMeta.badgeClass}`}
                   >
-                      <span
+                    <span
                       className={`w-2 h-2 rounded-full ${
                         isConnected
                           ? "bg-[#23D996]"
-                          : connection?.isRecovering || connectionStatus === "creating" || connectionStatus === "qr_pending"
+                          : isOnboarding
                             ? "bg-[#E9B949] animate-pulse"
                             : "bg-[#E15B5B]"
                       }`}
@@ -258,53 +211,67 @@ export default function Step7Launch({
                   <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     <div className="flex items-start gap-3">
                       <div className="w-11 h-11 rounded-2xl bg-white border border-[#025940]/[0.10] flex items-center justify-center shadow-sm">
-                        <Link2 className="w-5 h-5 text-[#062B1D]/70" strokeWidth={2.2} />
+                        <Link2
+                          className="w-5 h-5 text-[#062B1D]/70"
+                          strokeWidth={2.2}
+                        />
                       </div>
                       <div className="min-w-0">
-                        <div className="font-['Syne'] font-800 text-[#062B1D] leading-tight">Conexão via WhatsApp</div>
+                        <div className="font-['Syne'] font-800 text-[#062B1D] leading-tight">
+                          Conexão via Meta
+                        </div>
                         <div className="mt-1 text-[13px] text-[#3F4944]/70 font-['Space_Grotesk'] font-600 leading-relaxed">
-                          Gere o QR Code da clínica, escaneie com o celular oficial e acompanhe o status real da conexão por aqui.
+                          Abra o Embedded Signup oficial, autorize a
+                          ClinicCortex e acompanhe por aqui o estado real do
+                          número da clínica.
                         </div>
                       </div>
                     </div>
 
                     <button
                       type="button"
-                      onClick={startQrFlow}
-                      disabled={isStartingConnection || qrLoading || isPairingBlocked}
+                      onClick={startMetaFlow}
+                      disabled={
+                        whatsAppConnection.isStarting ||
+                        whatsAppConnection.loading
+                      }
                       className="h-12 px-6 rounded-2xl bg-[#062B1D] text-white border border-[#062B1D] font-['Space_Grotesk'] font-900 text-[11px] uppercase tracking-[0.22em] disabled:opacity-60 disabled:cursor-not-allowed transition-colors hover:bg-[#0B3A27]"
                     >
-                      {isStartingConnection ? "Processando..." : actionLabel}
+                      {whatsAppConnection.isStarting
+                        ? "Abrindo Meta..."
+                        : actionLabel}
                     </button>
                   </div>
 
                   <div className="mt-6 grid grid-cols-1 md:grid-cols-[220px,1fr] gap-5 items-center">
                     <div className="w-full max-w-[220px] mx-auto aspect-square rounded-[1.75rem] bg-white border border-[#025940]/[0.12] shadow-sm overflow-hidden flex items-center justify-center">
-                      {qrCode && !isPairingBlocked ? (
-                        <img
-                          src={qrCode}
-                          alt="QR Code do WhatsApp da clínica"
-                          className="w-full h-full object-contain p-3"
-                        />
-                      ) : qrLoading || isStartingConnection || connectionStatus === "creating" ? (
+                      {isConnected ? (
+                        <div className="flex flex-col items-center justify-center text-center px-5">
+                          <CheckCircle2
+                            className="w-12 h-12 text-[#118C5F]"
+                            strokeWidth={2.2}
+                          />
+                          <p className="mt-4 text-sm font-['Space_Grotesk'] font-700 text-[#062B1D]">
+                            Conta oficial ativa
+                          </p>
+                        </div>
+                      ) : whatsAppConnection.loading ||
+                        whatsAppConnection.isStarting ||
+                        isOnboarding ? (
                         <div className="flex flex-col items-center justify-center text-center px-5">
                           <div className="w-10 h-10 rounded-full border-2 border-[#118C5F]/25 border-t-[#118C5F] animate-spin" />
                           <p className="mt-4 text-sm font-['Space_Grotesk'] font-700 text-[#062B1D]">
-                            Aguardando geração do QR
-                          </p>
-                        </div>
-                      ) : isConnected ? (
-                        <div className="flex flex-col items-center justify-center text-center px-5">
-                          <CheckCircle2 className="w-12 h-12 text-[#118C5F]" strokeWidth={2.2} />
-                          <p className="mt-4 text-sm font-['Space_Grotesk'] font-700 text-[#062B1D]">
-                            WhatsApp conectado
+                            Aguardando a Meta
                           </p>
                         </div>
                       ) : (
                         <div className="flex flex-col items-center justify-center text-center px-5">
-                          <QrCode className="w-12 h-12 text-[#062B1D]/25" strokeWidth={1.8} />
+                          <Link2
+                            className="w-12 h-12 text-[#062B1D]/25"
+                            strokeWidth={1.8}
+                          />
                           <p className="mt-4 text-sm font-['Space_Grotesk'] font-700 text-[#062B1D]">
-                            QR ainda não gerado
+                            Nenhuma conta conectada
                           </p>
                         </div>
                       )}
@@ -329,14 +296,14 @@ export default function Step7Launch({
                         <button
                           type="button"
                           onClick={refreshConnectionState}
-                          disabled={qrLoading}
+                          disabled={whatsAppConnection.loading}
                           className="inline-flex items-center gap-2 h-11 px-4 rounded-2xl bg-white border border-[#025940]/[0.12] text-[#062B1D] font-['Space_Grotesk'] font-900 text-[11px] uppercase tracking-[0.2em] disabled:opacity-60 disabled:cursor-not-allowed hover:bg-[#F9FCFA] transition-colors"
                         >
                           <RefreshCcw className="w-4 h-4" strokeWidth={2.2} />
                           Atualizar status
                         </button>
 
-                        {pollingActive ? (
+                        {whatsAppConnection.pollingActive ? (
                           <span className="inline-flex items-center gap-2 h-11 px-4 rounded-2xl bg-[#FFF7DB] border border-[#E9B949]/30 text-[#8A5A00] font-['Space_Grotesk'] font-900 text-[11px] uppercase tracking-[0.2em]">
                             <span className="w-2 h-2 rounded-full bg-[#E9B949] animate-pulse" />
                             Verificando conexão
@@ -346,18 +313,26 @@ export default function Step7Launch({
                     </div>
                   </div>
 
-                  {qrError && (
+                  {whatsAppConnection.error && (
                     <div className="mt-5 rounded-2xl border border-[#F2C0C0] bg-[#FFF1F1] px-4 py-3 text-[#A63838] text-sm font-['Space_Grotesk'] font-700 flex items-start gap-3">
-                      <AlertTriangle className="w-4.5 h-4.5 mt-0.5" strokeWidth={2.2} />
-                      <span>{qrError}</span>
+                      <AlertTriangle
+                        className="w-4.5 h-4.5 mt-0.5"
+                        strokeWidth={2.2}
+                      />
+                      <span>{whatsAppConnection.error}</span>
                     </div>
                   )}
                 </div>
 
                 <div className="mt-7 flex items-start gap-3 text-[#3F4944]/70 text-sm font-['Space_Grotesk'] font-600">
-                  <CheckCircle2 className="w-4.5 h-4.5 mt-0.5 text-[#118C5F]" strokeWidth={2.4} />
+                  <CheckCircle2
+                    className="w-4.5 h-4.5 mt-0.5 text-[#118C5F]"
+                    strokeWidth={2.4}
+                  />
                   <span>
-                    Você pode finalizar agora e voltar depois para conectar o WhatsApp. O status atual da conexão fica salvo para esta clínica.
+                    Você pode finalizar agora e concluir a conexão oficial
+                    depois. O progresso do onboarding da clínica não será
+                    perdido.
                   </span>
                 </div>
               </div>
@@ -370,11 +345,15 @@ export default function Step7Launch({
                   <div className="text-[11px] font-900 uppercase tracking-[0.25em] text-white/60 font-['Space_Grotesk']">
                     Antes de finalizar
                   </div>
-                  <div className="mt-2 text-2xl font-800 font-['Syne'] leading-tight">Revisao rapida</div>
+                  <div className="mt-2 text-2xl font-800 font-['Syne'] leading-tight">
+                    Revisao rapida
+                  </div>
                   <div className="mt-5 space-y-4 text-[14px] text-white/80 font-['Space_Grotesk'] font-600">
                     <div className="flex items-start gap-3">
                       <span className="mt-1 w-2 h-2 rounded-full bg-[#23D996]" />
-                      <span>Seu prompt e suas configuracoes ja estao salvos.</span>
+                      <span>
+                        Seu prompt e suas configuracoes ja estao salvos.
+                      </span>
                     </div>
                     <div className="flex items-start gap-3">
                       <span className="mt-1 w-2 h-2 rounded-full bg-[#23D996]" />
@@ -382,7 +361,10 @@ export default function Step7Launch({
                     </div>
                     <div className="flex items-start gap-3">
                       <span className="mt-1 w-2 h-2 rounded-full bg-[#23D996]" />
-                      <span>Voce podera conectar o WhatsApp a qualquer momento.</span>
+                      <span>
+                        Voce podera conectar o WhatsApp a qualquer momento pelo
+                        fluxo oficial da Meta.
+                      </span>
                     </div>
                   </div>
 
@@ -402,12 +384,8 @@ export default function Step7Launch({
                     </div>
                     <div className="mt-3 text-[14px] text-white/70 font-['Space_Grotesk'] font-600 leading-relaxed">
                       {isConnected
-                        ? "Seu número já está pronto para uso nas próximas etapas do sistema."
-                        : isPairingBlocked
-                          ? "O WhatsApp pausou temporariamente novos pareamentos. Você pode finalizar agora e tentar novamente depois, sem perder o progresso."
-                        : connection?.manualActionRequired
-                          ? "A sessão exigirá um novo QR quando você quiser reconectar. Você pode finalizar o onboarding agora sem perder o progresso."
-                          : "Você pode finalizar o onboarding agora e conectar o WhatsApp depois, sem perder o progresso."}
+                        ? "Seu número oficial já está pronto para uso no SaaS."
+                        : "Você pode finalizar o onboarding agora e concluir a conexão oficial depois, sem perder o progresso."}
                     </div>
                   </div>
                 </div>

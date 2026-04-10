@@ -1,5 +1,7 @@
 {
-  "name": "ClinicCortex - WhatsApp CortexAI Agent",
+  "id": "pSYBr9L3aq58zNdW",
+  "name": "ClinicCortex - WhatsApp AI Agent",
+  "active": true,
   "nodes": [
     {
       "parameters": {
@@ -8,11 +10,11 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "e1a10001-cc00-4000-a001-000000000001",
+      "id": "37a84303-80ed-4bb9-ae63-e07d4fb246ef",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [200, 400],
+      "position": [-1312, 624],
       "webhookId": "e1a10001-cc00-4000-a001-000000000099"
     },
     {
@@ -49,26 +51,25 @@
         },
         "options": {}
       },
-      "id": "e1a10002-cc00-4000-a002-000000000002",
+      "id": "49fc32c3-604f-423e-b1ae-f3d83698389e",
       "name": "Validar Payload",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [420, 400]
+      "position": [-1088, 624]
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "=https://wvcsatgdwzsrglqlmpix.supabase.co/rest/v1/clinics?id=eq.{{ $('Webhook').first().json.body.clinicId }}&select=id,name,assistant_area,assistant_specialties,assistant_prompt,assistant_personality&limit=1",
+        "url": "={{ ($env.SUPABASE_URL.replace(/\\/$/, '')) + '/rest/v1/clinics?id=eq.' + $('Webhook').first().json.body.clinicId + '&select=id,name,assistant_area,assistant_specialties,assistant_prompt,assistant_personality&limit=1' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "apikey",
-              "value": "YOUR_SERVICE_ROLE_KEY"
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Authorization",
-              "value": "Bearer YOUR_SERVICE_ROLE_KEY"
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
               "name": "Content-Type",
@@ -78,62 +79,53 @@
         },
         "options": {}
       },
-      "id": "e1a10003-cc00-4000-a003-000000000003",
+      "id": "95c75ed3-e9f7-42ae-9116-d085bea46493",
       "name": "Buscar Clínica",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [640, 300]
+      "position": [-864, 512]
     },
     {
       "parameters": {
-        "mode": "manual",
         "fields": {
           "values": [
             {
               "name": "clinicId",
-              "type": "stringValue",
               "stringValue": "={{ $('Webhook').first().json.body.clinicId }}"
             },
             {
               "name": "clinicName",
-              "type": "stringValue",
               "stringValue": "={{ $('Buscar Clínica').first().json.name ?? 'Clínica' }}"
             },
             {
               "name": "assistantName",
-              "type": "stringValue",
-              "stringValue": "CortexAI"
+              "stringValue": "Cortex AI"
             },
             {
               "name": "assistantPersonality",
-              "type": "stringValue",
               "stringValue": "={{ $('Buscar Clínica').first().json.assistant_personality ?? 'executivo' }}"
             },
             {
               "name": "assistantSpecialties",
-              "type": "stringValue",
               "stringValue": "={{ Array.isArray($('Buscar Clínica').first().json.assistant_specialties) && $('Buscar Clínica').first().json.assistant_specialties.length ? $('Buscar Clínica').first().json.assistant_specialties.join(', ') : 'Não informado' }}"
             },
             {
               "name": "patientMessage",
-              "type": "stringValue",
               "stringValue": "={{ $('Webhook').first().json.body.messageText }}"
             },
             {
               "name": "systemPrompt",
-              "type": "stringValue",
-              "stringValue": "={{ (() => { const clinic = $('Buscar Clínica').first().json || {}; const clinicName = String(clinic.name || '').trim() || 'Clínica'; const assistantPersonality = String(clinic.assistant_personality || '').trim() || 'executivo'; const specialties = Array.isArray(clinic.assistant_specialties) && clinic.assistant_specialties.length ? clinic.assistant_specialties.join(', ') : 'Não informado'; const basePrompt = String(clinic.assistant_prompt || '').trim() || ('Você é CortexAI, assistente virtual da ' + clinicName + '. Responda sempre em português do Brasil, com linguagem clara, profissional e objetiva. Nunca invente informações. Se faltar contexto, diga isso com transparência e peça esclarecimentos antes de seguir. Mantenha um tom ' + assistantPersonality + '.'); return [basePrompt, '---', 'REGRAS DE EXECUÇÃO ADICIONAIS', 'Nome oficial da clínica: ' + clinicName, 'Especialidades cadastradas: ' + specialties, '- Ao se apresentar, use o nome oficial da clínica sempre que ele estiver disponível.', '- Se o paciente quiser agendar e ainda não tiver escolhido um serviço ou especialidade, apresente primeiro as opções que você conhece no contexto antes de pedir a preferência.', '- Não peça nome de profissional se o contexto não trouxer uma lista explícita de profissionais cadastrados.', '- Se houver apenas um serviço disponível no contexto, ofereça esse serviço de forma natural.', '- Nunca se apresente apenas como assistente virtual da Clínica quando o nome oficial estiver disponível.'].join('\\n\\n'); })() }}"
+              "stringValue": "={{ (() => { const clinic = $('Buscar Clínica').first().json || {}; const clinicName = String(clinic.name || '').trim() || 'Clínica'; const assistantPersonality = String(clinic.assistant_personality || '').trim() || 'executivo'; const specialties = Array.isArray(clinic.assistant_specialties) && clinic.assistant_specialties.length ? clinic.assistant_specialties.join(', ') : 'Não informado'; const basePrompt = String(clinic.assistant_prompt || '').trim() || ('Você é Cortex AI, assistente virtual da ' + clinicName + '. Responda sempre em português do Brasil, com linguagem clara, profissional e objetiva. Nunca invente informações. Se faltar contexto, diga isso com transparência e peça esclarecimentos antes de seguir. Mantenha um tom ' + assistantPersonality + '.'); return [basePrompt, '---', 'REGRAS DE EXECUÇÃO ADICIONAIS', 'Nome oficial da clínica: ' + clinicName, 'Especialidades cadastradas: ' + specialties, '- Ao se apresentar, use o nome oficial da clínica sempre que ele estiver disponível.', '- Se o paciente quiser agendar e ainda não tiver escolhido um serviço ou especialidade, apresente primeiro as opções que você conhece no contexto antes de pedir a preferência.', '- Não peça nome de profissional se o contexto não trouxer uma lista explícita de profissionais cadastrados.', '- Se houver apenas um serviço disponível no contexto, ofereça esse serviço de forma natural.', '- Nunca se apresente apenas como assistente virtual da Clínica quando o nome oficial estiver disponível.'].join('\\n\\n'); })() }}"
             }
           ]
         },
-        "include": "all",
         "options": {}
       },
-      "id": "e1a10005-cc00-4000-a005-000000000005",
+      "id": "f6195f8c-0407-4a6e-adb1-24acde94128a",
       "name": "Montar Contexto",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [860, 300]
+      "position": [-640, 512]
     },
     {
       "parameters": {
@@ -144,136 +136,122 @@
           "maxIterations": 4
         }
       },
-      "id": "e1a10006-cc00-4000-a006-000000000006",
-      "name": "CortexAI Agent",
+      "id": "c3e9259e-af5f-456f-90fe-d1ddac0aab4b",
+      "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
-      "position": [1080, 300]
+      "position": [-432, 512]
     },
     {
       "parameters": {
-        "modelName": "models/gemini-2.5-flash",
         "options": {
           "maxOutputTokens": 500,
           "temperature": 0.4
         }
       },
-      "id": "e1a10011-cc00-4000-a011-000000000011",
+      "id": "2670e376-ac6d-40e1-8fdf-f3b4707e7801",
       "name": "Google Gemini Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
+      "position": [-432, 736],
       "credentials": {
         "googlePalmApi": {
           "id": "5bshqxgEMV0mUNs6",
           "name": "Google Gemini(PaLM) Api account"
         }
-      },
-      "position": [1080, 520]
+      }
     },
     {
       "parameters": {
         "sessionIdType": "customKey",
-        "sessionKey": "={{ $('Webhook').first().json.body.clinicId + ':' + ($('Webhook').first().json.body.connectionId ?? 'default') + ':' + $('Webhook').first().json.body.remoteJid }}",
+        "sessionKey": "={{ $('Webhook').first().json.body.clinicId + ':' + ($('Webhook').first().json.body.connectionId ?? 'default') + ':' + $('Webhook').first().json.body.contactWaId }}",
         "contextWindowLength": 16
       },
-      "id": "e1a10012-cc00-4000-a012-000000000012",
+      "id": "2049c1a9-ca4e-4d1f-a9f7-630a5c77a2c4",
       "name": "Simple Memory",
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.3,
-      "position": [1280, 520]
+      "position": [-304, 736]
     },
     {
       "parameters": {
-        "mode": "manual",
         "fields": {
           "values": [
             {
               "name": "replyText",
-              "type": "stringValue",
               "stringValue": "={{ (($json.output || '').trim()) || 'Desculpe, não consegui gerar uma resposta agora.' }}"
             },
             {
               "name": "clinicId",
-              "type": "stringValue",
               "stringValue": "={{ $('Montar Contexto').first().json.clinicId }}"
             },
             {
               "name": "assistantName",
-              "type": "stringValue",
               "stringValue": "={{ $('Montar Contexto').first().json.assistantName }}"
             },
             {
-              "name": "remoteJid",
-              "type": "stringValue",
-              "stringValue": "={{ $('Webhook').first().json.body.remoteJid ?? '' }}"
+              "name": "contactWaId",
+              "stringValue": "={{ $('Webhook').first().json.body.contactWaId ?? '' }}"
             },
             {
               "name": "connectionId",
-              "type": "stringValue",
               "stringValue": "={{ $('Webhook').first().json.body.connectionId ?? '' }}"
             }
           ]
         },
-        "include": "all",
         "options": {}
       },
-      "id": "e1a10007-cc00-4000-a007-000000000007",
+      "id": "63659be1-82a6-42d1-aee8-76d642d26de0",
       "name": "Estruturar Saída",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [1300, 300]
+      "position": [-144, 512]
     },
     {
       "parameters": {
-        "respondWith": "firstIncomingItem",
         "options": {
           "responseCode": 200
         }
       },
-      "id": "e1a10008-cc00-4000-a008-000000000008",
+      "id": "cbc9501e-3769-4ef4-bde7-10559992f179",
       "name": "Responder ao WhatsApp",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1520, 300]
+      "position": [16, 512]
     },
     {
       "parameters": {
-        "mode": "manual",
         "fields": {
           "values": [
             {
               "name": "replyText",
-              "type": "stringValue",
               "stringValue": "Desculpe, não consegui processar sua mensagem no momento."
             },
             {
               "name": "error",
-              "type": "booleanValue",
-              "booleanValue": "true"
+              "type": "booleanValue"
             }
           ]
         },
-        "include": "all",
         "options": {}
       },
-      "id": "e1a10009-cc00-4000-a009-000000000009",
+      "id": "8a0c236e-e85e-4b95-bc58-723bb9ae0f21",
       "name": "Erro de Validação",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [640, 540]
+      "position": [-864, 752]
     },
     {
       "parameters": {
-        "respondWith": "firstIncomingItem",
         "options": {
           "responseCode": 400
         }
       },
-      "id": "e1a10010-cc00-4000-a010-000000000010",
+      "id": "c3c4ce8e-7fb5-4280-9d38-3e7ba45fb594",
       "name": "Responder Erro",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [860, 540]
+      "position": [-640, 752]
     }
   ],
   "connections": {
@@ -321,7 +299,7 @@
       "main": [
         [
           {
-            "node": "CortexAI Agent",
+            "node": "AI Agent",
             "type": "main",
             "index": 0
           }
@@ -332,7 +310,7 @@
       "ai_languageModel": [
         [
           {
-            "node": "CortexAI Agent",
+            "node": "AI Agent",
             "type": "ai_languageModel",
             "index": 0
           }
@@ -343,14 +321,14 @@
       "ai_memory": [
         [
           {
-            "node": "CortexAI Agent",
+            "node": "AI Agent",
             "type": "ai_memory",
             "index": 0
           }
         ]
       ]
     },
-    "CortexAI Agent": {
+    "AI Agent": {
       "main": [
         [
           {
@@ -384,12 +362,15 @@
       ]
     }
   },
-  "pinData": {},
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "binaryMode": "separate"
   },
   "staticData": null,
-  "tags": [],
-  "triggerCount": 0,
-  "versionId": "e1a10000-cc00-4000-a000-000000000001"
+  "pinData": {},
+  "versionId": "7609e766-ab35-4eee-8c8a-32c945c0bea1",
+  "activeVersionId": "7609e766-ab35-4eee-8c8a-32c945c0bea1",
+  "versionCounter": 32,
+  "triggerCount": 1,
+  "tags": []
 }

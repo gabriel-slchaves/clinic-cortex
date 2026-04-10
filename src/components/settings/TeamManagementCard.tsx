@@ -26,9 +26,10 @@ const ACCESS_OPTIONS: Array<{
   kind: "doctor" | "secretary";
 }> = [
   { value: "doctor", label: "Profissional", description: "Atendimento clínico com acesso operacional padrão.", kind: "doctor" },
-  { value: "doctor_admin", label: "Admin clínico", description: "Profissional com permissões ampliadas na operação.", kind: "doctor" },
   { value: "secretary", label: "Secretária", description: "Acesso administrativo para agenda e suporte à clínica.", kind: "secretary" },
 ];
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function initials(text: string) {
   const value = String(text || "CC").trim();
@@ -78,6 +79,10 @@ function resolveLicenseLabel(areaId: AreaId | null | "") {
 
 function normalizeDraftSpecialties(next: string[], options: string[]) {
   return next.filter((item) => options.includes(item));
+}
+
+function isValidEmail(value: string) {
+  return EMAIL_REGEX.test(value.trim());
 }
 
 function resolveAreaSpecialtyOptions(
@@ -191,6 +196,11 @@ export default function TeamManagementCard({
     ).filter(Boolean);
   }, [clinicAreaId, clinicSpecialties, draft.areaId, draft.specialties]);
 
+  const editingLegacyDoctorAdmin = Boolean(
+    editingRow && !editingRow.isOwner && editingRow.accessLevel === "doctor_admin"
+  );
+  const showProfessionalFields = editingRow?.isOwner || draft.accessLevel !== "secretary";
+
   useEffect(() => {
     if (!open) {
       setError(null);
@@ -260,6 +270,26 @@ export default function TeamManagementCard({
     }));
   };
 
+  const handleAccessLevelChange = (value: Exclude<TeamAccessLevel, "owner">) => {
+    setDraft((current) => {
+      if (value === "secretary") {
+        return {
+          ...current,
+          accessLevel: value,
+          areaId: "",
+          specialties: [],
+          licenseCode: "",
+        };
+      }
+
+      return {
+        ...current,
+        accessLevel: value,
+        areaId: current.areaId || clinicAreaId || "medicina",
+      };
+    });
+  };
+
   const toggleSpecialty = (specialty: string) => {
     setDraft((current) => ({
       ...current,
@@ -282,7 +312,21 @@ export default function TeamManagementCard({
       return;
     }
 
-    const option = ACCESS_OPTIONS.find((item) => item.value === draft.accessLevel) || ACCESS_OPTIONS[0];
+    if (!editingRow && !isValidEmail(draft.email)) {
+      setError("Informe um e-mail válido para criar o acesso.");
+      return;
+    }
+
+    const option =
+      ACCESS_OPTIONS.find((item) => item.value === draft.accessLevel) ||
+      (draft.accessLevel === "doctor_admin"
+        ? {
+            value: "doctor_admin" as const,
+            label: "Admin clínico (legado)",
+            description: "Perfil legado com permissão administrativa ampliada.",
+            kind: "doctor" as const,
+          }
+        : ACCESS_OPTIONS[0]);
     if (option.kind === "doctor" && !doctorAvailable) {
       setError("O limite de profissionais deste plano já foi atingido.");
       return;
@@ -291,6 +335,16 @@ export default function TeamManagementCard({
       setError("O limite de secretárias deste plano já foi atingido.");
       return;
     }
+    if (option.kind === "doctor" && !draft.areaId) {
+      setError("Selecione a área de atuação do profissional.");
+      return;
+    }
+
+    const normalizedSpecialties =
+      option.kind === "secretary" ? [] : normalizeDraftSpecialties(draft.specialties, availableSpecialties);
+    const normalizedAreaId = option.kind === "secretary" ? null : draft.areaId || null;
+    const normalizedLicenseCode =
+      option.kind === "secretary" ? null : draft.licenseCode.trim() || null;
 
     setSubmitting(true);
     try {
@@ -298,18 +352,18 @@ export default function TeamManagementCard({
         await onUpdate(editingRow.id, {
           fullName: draft.fullName.trim(),
           accessLevel: editingRow.isOwner ? "owner" : draft.accessLevel,
-          areaId: draft.areaId || null,
-          specialties: draft.specialties,
-          licenseCode: draft.licenseCode.trim() || null,
+          areaId: normalizedAreaId,
+          specialties: normalizedSpecialties,
+          licenseCode: normalizedLicenseCode,
         });
       } else {
         await onCreate({
           fullName: draft.fullName.trim(),
           email: draft.email.trim(),
           accessLevel: draft.accessLevel,
-          areaId: draft.areaId || null,
-          specialties: draft.specialties,
-          licenseCode: draft.licenseCode.trim() || null,
+          areaId: normalizedAreaId,
+          specialties: normalizedSpecialties,
+          licenseCode: normalizedLicenseCode,
         });
       }
 
@@ -436,28 +490,41 @@ export default function TeamManagementCard({
                       </div>
                     </td>
                     <td className="px-6 py-5">
-                      <p className="text-[13px] text-[var(--cc-theme-fg)] opacity-85 font-['Space_Grotesk'] font-700">{areaTitle(member.areaId)}</p>
-                      {member.specialties.length ? (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {member.specialties.map((specialty) => (
-                            <span
-                              key={`${member.id}-${specialty}`}
-                              className="inline-flex items-center rounded-full border border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card-solid)] px-2.5 py-1 text-[10px] font-['Space_Grotesk'] font-800 text-[var(--cc-theme-muted)]"
-                            >
-                              {specialty}
-                            </span>
-                          ))}
-                        </div>
+                      {member.memberKind === "secretary" ? (
+                        <>
+                          <p className="text-[13px] text-[var(--cc-theme-fg)] opacity-85 font-['Space_Grotesk'] font-700">
+                            Acesso administrativo
+                          </p>
+                          <p className="mt-1 text-[12px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600 leading-relaxed">
+                            Área, especialidades e registro profissional não se aplicam a esse perfil.
+                          </p>
+                        </>
                       ) : (
-                        <p className="mt-1 text-[12px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600 leading-relaxed">
-                          Sem especialidades definidas.
-                        </p>
+                        <>
+                          <p className="text-[13px] text-[var(--cc-theme-fg)] opacity-85 font-['Space_Grotesk'] font-700">{areaTitle(member.areaId)}</p>
+                          {member.specialties.length ? (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {member.specialties.map((specialty) => (
+                                <span
+                                  key={`${member.id}-${specialty}`}
+                                  className="inline-flex items-center rounded-full border border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card-solid)] px-2.5 py-1 text-[10px] font-['Space_Grotesk'] font-800 text-[var(--cc-theme-muted)]"
+                                >
+                                  {specialty}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-1 text-[12px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600 leading-relaxed">
+                              Sem especialidades definidas.
+                            </p>
+                          )}
+                          {member.licenseCode ? (
+                            <p className="mt-1 text-[11px] text-[var(--cc-theme-accent)] opacity-80 font-['Space_Grotesk'] font-700">
+                              {resolveLicenseLabel(member.areaId)}: {member.licenseCode}
+                            </p>
+                          ) : null}
+                        </>
                       )}
-                      {member.licenseCode ? (
-                        <p className="mt-1 text-[11px] text-[var(--cc-theme-accent)] opacity-80 font-['Space_Grotesk'] font-700">
-                          {resolveLicenseLabel(member.areaId)}: {member.licenseCode}
-                        </p>
-                      ) : null}
                     </td>
                     <td className="px-6 py-5">
                       <span
@@ -543,6 +610,17 @@ export default function TeamManagementCard({
           </div>
 
           <div className="p-6 md:p-7 space-y-5 max-h-[78vh] overflow-y-auto">
+            {!editingRow ? (
+              <div className="rounded-2xl border border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card)] px-4 py-3">
+                <p className="text-[13px] font-800 font-['Syne'] text-[var(--cc-theme-fg)]">
+                  A conta criada no cadastro já é o único admin da clínica.
+                </p>
+                <p className="mt-1 text-[12px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
+                  Os próximos acessos devem ser profissionais ou secretárias, respeitando os limites do plano.
+                </p>
+              </div>
+            ) : null}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="block text-[11px] font-800 uppercase tracking-[0.18em] text-[var(--cc-theme-muted)] font-['Space_Grotesk']">
@@ -581,71 +659,84 @@ export default function TeamManagementCard({
                 <select
                   aria-label="Nível de acesso"
                   value={editingRow?.isOwner ? "owner" : draft.accessLevel}
-                  onChange={(event) => setDraft((current) => ({ ...current, accessLevel: event.target.value as Exclude<TeamAccessLevel, "owner"> }))}
+                  onChange={(event) => handleAccessLevelChange(event.target.value as Exclude<TeamAccessLevel, "owner">)}
                   disabled={Boolean(editingRow?.isOwner)}
                   className="w-full h-12 rounded-2xl border border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card)] px-4 text-[15px] font-['Space_Grotesk'] font-600 text-[var(--cc-theme-fg)] outline-none focus:ring-2 focus:ring-[color:var(--cc-theme-accent)] disabled:opacity-70"
                 >
                   {editingRow?.isOwner ? <option value="owner">Admin</option> : null}
+                  {editingLegacyDoctorAdmin ? (
+                    <option value="doctor_admin">Admin clínico (legado)</option>
+                  ) : null}
                   {ACCESS_OPTIONS.map((option) => {
                     const optionDisabled = option.kind === "doctor" ? !doctorAvailable : !secretaryAvailable;
-                    const keepCurrent = editingRow && editingRow.memberKind === option.kind;
+                    const keepCurrent =
+                      Boolean(editingRow && editingRow.memberKind === option.kind) ||
+                      (editingLegacyDoctorAdmin && option.value === "doctor");
                     return <option key={option.value} value={option.value} disabled={optionDisabled && !keepCurrent}>{option.label}</option>;
                   })}
                 </select>
               </div>
 
-              <div className="space-y-2">
-                <label className="block text-[11px] font-800 uppercase tracking-[0.18em] text-[var(--cc-theme-muted)] font-['Space_Grotesk']">
-                  Área de atuação
-                </label>
-                <select
-                  aria-label="Área de atuação"
-                  value={draft.areaId}
-                  onChange={(event) => handleAreaChange((event.target.value as AreaId) || "")}
-                  className="w-full h-12 rounded-2xl border border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card)] px-4 text-[15px] font-['Space_Grotesk'] font-600 text-[var(--cc-theme-fg)] outline-none focus:ring-2 focus:ring-[color:var(--cc-theme-accent)]"
-                >
-                  {CLINIC_AREAS.map((area) => <option key={area.id} value={area.id}>{area.title}</option>)}
-                </select>
-              </div>
+              {showProfessionalFields ? (
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-800 uppercase tracking-[0.18em] text-[var(--cc-theme-muted)] font-['Space_Grotesk']">
+                    Área de atuação
+                  </label>
+                  <select
+                    aria-label="Área de atuação"
+                    value={draft.areaId}
+                    onChange={(event) => handleAreaChange((event.target.value as AreaId) || "")}
+                    className="w-full h-12 rounded-2xl border border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card)] px-4 text-[15px] font-['Space_Grotesk'] font-600 text-[var(--cc-theme-fg)] outline-none focus:ring-2 focus:ring-[color:var(--cc-theme-accent)]"
+                  >
+                    {CLINIC_AREAS.map((area) => <option key={area.id} value={area.id}>{area.title}</option>)}
+                  </select>
+                </div>
+              ) : null}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-[1.35fr,0.65fr] gap-4 items-start">
-              <div className="space-y-3">
-                <label className="block text-[11px] font-800 uppercase tracking-[0.18em] text-[var(--cc-theme-muted)] font-['Space_Grotesk']">
-                  Especialidades
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {availableSpecialties.length ? availableSpecialties.map((specialty) => {
-                    const checked = draft.specialties.includes(specialty);
-                    return (
-                      <label key={specialty} className={cn("flex items-center gap-3 rounded-2xl border px-3 py-3 cursor-pointer transition-colors", checked ? "border-[color:var(--cc-theme-accent)] bg-[var(--cc-theme-accent-soft)]" : "border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card)] hover:bg-[var(--cc-theme-accent-soft)]") }>
-                        <Checkbox checked={checked} onCheckedChange={() => toggleSpecialty(specialty)} className="border-[var(--cc-theme-card-border)] data-[state=checked]:bg-[var(--cc-theme-accent)] data-[state=checked]:border-[var(--cc-theme-accent)] data-[state=checked]:text-[var(--cc-theme-action-fg)]" />
-                        <span className="text-[13px] font-['Space_Grotesk'] font-600 text-[var(--cc-theme-fg)]">{specialty}</span>
-                      </label>
-                    );
-                  }) : (
-                    <div className="sm:col-span-2 rounded-2xl border border-dashed border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card)] px-4 py-5 text-[12px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
-                      Selecione primeiro uma área para liberar as especialidades.
-                    </div>
-                  )}
+            {showProfessionalFields ? (
+              <div className="grid grid-cols-1 md:grid-cols-[1.35fr,0.65fr] gap-4 items-start">
+                <div className="space-y-3">
+                  <label className="block text-[11px] font-800 uppercase tracking-[0.18em] text-[var(--cc-theme-muted)] font-['Space_Grotesk']">
+                    Especialidades
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {availableSpecialties.length ? availableSpecialties.map((specialty) => {
+                      const checked = draft.specialties.includes(specialty);
+                      return (
+                        <label key={specialty} className={cn("flex items-center gap-3 rounded-2xl border px-3 py-3 cursor-pointer transition-colors", checked ? "border-[color:var(--cc-theme-accent)] bg-[var(--cc-theme-accent-soft)]" : "border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card)] hover:bg-[var(--cc-theme-accent-soft)]") }>
+                          <Checkbox checked={checked} onCheckedChange={() => toggleSpecialty(specialty)} className="border-[var(--cc-theme-card-border)] data-[state=checked]:bg-[var(--cc-theme-accent)] data-[state=checked]:border-[var(--cc-theme-accent)] data-[state=checked]:text-[var(--cc-theme-action-fg)]" />
+                          <span className="text-[13px] font-['Space_Grotesk'] font-600 text-[var(--cc-theme-fg)]">{specialty}</span>
+                        </label>
+                      );
+                    }) : (
+                      <div className="sm:col-span-2 rounded-2xl border border-dashed border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card)] px-4 py-5 text-[12px] text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
+                        Selecione primeiro uma área para liberar as especialidades.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-800 uppercase tracking-[0.18em] text-[var(--cc-theme-muted)] font-['Space_Grotesk']">
+                    {resolveLicenseLabel(draft.areaId)}
+                  </label>
+                  <Input
+                    aria-label={resolveLicenseLabel(draft.areaId)}
+                    value={draft.licenseCode}
+                    onChange={(event) => setDraft((current) => ({ ...current, licenseCode: event.target.value }))}
+                    className="h-12 rounded-2xl border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card)] text-[15px] font-['Space_Grotesk'] font-600 text-[var(--cc-theme-fg)]"
+                    placeholder={`${resolveLicenseLabel(draft.areaId)} / Registro`}
+                  />
                 </div>
               </div>
+            ) : null}
 
-              <div className="space-y-2">
-                <label className="block text-[11px] font-800 uppercase tracking-[0.18em] text-[var(--cc-theme-muted)] font-['Space_Grotesk']">
-                  {resolveLicenseLabel(draft.areaId)}
-                </label>
-                <Input
-                  aria-label={resolveLicenseLabel(draft.areaId)}
-                  value={draft.licenseCode}
-                  onChange={(event) => setDraft((current) => ({ ...current, licenseCode: event.target.value }))}
-                  className="h-12 rounded-2xl border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card)] text-[15px] font-['Space_Grotesk'] font-600 text-[var(--cc-theme-fg)]"
-                  placeholder={`${resolveLicenseLabel(draft.areaId)} / Registro`}
-                />
+            {error ? (
+              <div className="rounded-2xl border border-[rgba(248,113,113,0.28)] bg-[rgba(248,113,113,0.08)] px-4 py-3 text-[12px] font-['Space_Grotesk'] font-700 text-[var(--cc-theme-fg)]">
+                {error}
               </div>
-            </div>
-
-            {error ? <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[12px] font-['Space_Grotesk'] font-700 text-red-100">{error}</div> : null}
+            ) : null}
           </div>
 
           <div className="px-6 md:px-7 py-5 border-t border-[color:var(--cc-theme-card-border)] bg-[var(--cc-theme-card)]">
@@ -682,7 +773,7 @@ export default function TeamManagementCard({
                 A conta criada no cadastro já é a conta admin principal da clínica.
               </p>
               <p className="mt-2 text-[12px] leading-relaxed text-[var(--cc-theme-muted)] font-['Space_Grotesk'] font-600">
-                Para adicionar médicos, admins clínicos ou secretárias, precisamos liberar mais vagas no plano. Por enquanto, esse upgrade já pode ser feito direto na tela de Gerenciar plano.
+                Para adicionar profissionais ou secretárias, precisamos liberar mais vagas no plano. Por enquanto, esse upgrade já pode ser feito direto na tela de Gerenciar plano.
               </p>
             </div>
           </div>

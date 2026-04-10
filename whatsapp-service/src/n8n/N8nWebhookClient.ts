@@ -1,11 +1,11 @@
 export type N8nIncomingMessagePayload = {
   clinicId: string;
   connectionId: string;
-  remoteJid: string;
-  waMessageId: string;
+  contactWaId: string;
+  providerMessageId: string;
   messageText: string;
   messageType: string | null;
-  pushName: string | null;
+  profileName: string | null;
   receivedAt: string;
 };
 
@@ -85,7 +85,11 @@ export class N8nWebhookClient {
     } catch (error) {
       if (error instanceof N8nWebhookError) throw error;
       if ((error as Error)?.name === "AbortError") {
-        throw new N8nWebhookError("Webhook n8n excedeu o tempo limite.", null, true);
+        throw new N8nWebhookError(
+          "Webhook n8n excedeu o tempo limite.",
+          null,
+          true
+        );
       }
       throw new N8nWebhookError(
         error instanceof Error ? error.message : "Falha ao chamar webhook n8n.",

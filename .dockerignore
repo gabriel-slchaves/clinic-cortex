@@ -10,7 +10,6 @@ coverage
 # local env (Vite replaces at build time)
 .env
 .env.*
-!.env.example
 
 *.log
 npm-debug.log*

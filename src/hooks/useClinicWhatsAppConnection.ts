@@ -1,19 +1,19 @@
 import {
-  createWhatsAppConnection,
-  getWhatsAppConnectionByClinic,
-  getWhatsAppConnectionQrByClinic,
+  completeWhatsAppEmbeddedSignup,
+  createWhatsAppEmbeddedSignupSessionByClinic,
   getWhatsAppConnectionStatusByClinic,
-  startWhatsAppConnection,
-  startWhatsAppConnectionByClinic,
   WhatsAppApiError,
   type WhatsAppConnectionResponse,
-  type WhatsAppQrResponse,
 } from "@/lib/whatsappApi";
+import {
+  isMetaEmbeddedSignupCallbackPayload,
+  META_EMBEDDED_SIGNUP_MESSAGE_TYPE,
+  type MetaEmbeddedSignupCallbackPayload,
+} from "@/lib/whatsappEmbeddedSignup";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type ClinicWhatsAppState = {
   connection: WhatsAppConnectionResponse | null;
-  qrCode: string | null;
   loading: boolean;
   error: string | null;
   isStarting: boolean;
@@ -23,51 +23,74 @@ type ClinicWhatsAppState = {
 function getFriendlyError(error: unknown) {
   if (error instanceof WhatsAppApiError) return error.message;
   if (error instanceof Error) return error.message;
-  return "Não foi possível comunicar com o serviço do WhatsApp.";
+  return "Não foi possível comunicar com o serviço oficial do WhatsApp.";
 }
-
-type ConnectionSnapshot = WhatsAppConnectionResponse | WhatsAppQrResponse;
 
 function shouldKeepPolling(connection: WhatsAppConnectionResponse | null) {
   if (!connection) return false;
-  if (connection.status === "qr_pending") return true;
-  if (connection.status === "creating") return true;
-  return Boolean(connection.isRecovering);
+  if (connection.operationalStatus === "onboarding") return true;
+  return connection.verificationStatus === "pending";
 }
 
-function isCooldownActive(connection: WhatsAppConnectionResponse | null) {
-  if (connection?.pairingBlocked && !connection?.cooldownUntil) return true;
-  if (!connection?.cooldownUntil) return false;
-  const timestamp = Date.parse(connection.cooldownUntil);
-  return Number.isFinite(timestamp) && timestamp > Date.now();
+function openPopup(url: string) {
+  return window.open(
+    url,
+    "cliniccortex-meta-whatsapp",
+    "width=540,height=720,menubar=no,toolbar=no,status=no,location=yes,resizable=yes,scrollbars=yes"
+  );
 }
 
-function buildCooldownError(connection: WhatsAppConnectionResponse) {
-  if (connection.lastEventMessage) return connection.lastEventMessage;
-  if (connection.cooldownUntil) {
-    return `O WhatsApp bloqueou temporariamente novas conexões. Tente novamente após ${new Date(
-      connection.cooldownUntil
-    ).toLocaleString("pt-BR")}.`;
-  }
-  return "O WhatsApp bloqueou temporariamente novas conexões. Aguarde antes de gerar um novo QR Code.";
-}
+function waitForPopupCallback(popup: Window, expectedState: string) {
+  return new Promise<MetaEmbeddedSignupCallbackPayload>((resolve, reject) => {
+    const startedAt = Date.now();
 
-async function getOrCreateConnectionByClinic(clinicId: string) {
-  try {
-    return await getWhatsAppConnectionByClinic(clinicId);
-  } catch (error) {
-    if (error instanceof WhatsAppApiError && error.status === 404) {
-      return createWhatsAppConnection(clinicId);
-    }
-    throw error;
-  }
+    const cleanup = () => {
+      window.removeEventListener("message", onMessage);
+      window.clearInterval(intervalId);
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (!isMetaEmbeddedSignupCallbackPayload(event.data)) return;
+      if (
+        expectedState &&
+        event.data.state &&
+        event.data.state !== expectedState
+      )
+        return;
+
+      cleanup();
+      resolve(event.data);
+    };
+
+    const intervalId = window.setInterval(() => {
+      if (popup.closed) {
+        cleanup();
+        reject(
+          new Error(
+            "O onboarding oficial da Meta foi fechado antes de ser concluído."
+          )
+        );
+        return;
+      }
+
+      if (Date.now() - startedAt > 5 * 60 * 1000) {
+        cleanup();
+        popup.close();
+        reject(
+          new Error("O onboarding oficial da Meta excedeu o tempo limite.")
+        );
+      }
+    }, 400);
+
+    window.addEventListener("message", onMessage);
+  });
 }
 
 export function useClinicWhatsAppConnection(clinicId: string | null) {
   const pollingRef = useRef<number | null>(null);
   const [state, setState] = useState<ClinicWhatsAppState>({
     connection: null,
-    qrCode: null,
     loading: false,
     error: null,
     isStarting: false,
@@ -79,51 +102,37 @@ export function useClinicWhatsAppConnection(clinicId: string | null) {
       window.clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-    setState((current) => ({ ...current, pollingActive: false }));
+    setState(current => ({ ...current, pollingActive: false }));
   }, []);
 
-  const applyConnectionState = useCallback((connection: ConnectionSnapshot | null) => {
-    setState((current) => ({
-      ...current,
-      connection,
-      qrCode: connection && "qrCode" in connection ? connection.qrCode : current.qrCode,
-      error:
-        connection && isCooldownActive(connection)
-          ? buildCooldownError(connection)
-          : connection?.status === "error"
-          ? connection.lastError || "Falha ao conectar o WhatsApp."
-          : current.error,
-    }));
-  }, []);
-
-  const pollConnection = useCallback(async (): Promise<ConnectionSnapshot | null> => {
-    if (!clinicId) return null;
-
-    const status = await getWhatsAppConnectionStatusByClinic(clinicId);
-    applyConnectionState(status);
-
-    if (status.status === "qr_pending") {
-      const qrResponse = await getWhatsAppConnectionQrByClinic(clinicId);
-      applyConnectionState(qrResponse);
-      setState((current) => ({
+  const applyConnectionState = useCallback(
+    (connection: WhatsAppConnectionResponse | null) => {
+      setState(current => ({
         ...current,
-        qrCode: qrResponse.qrCode,
-        error: qrResponse.lastError || null,
+        connection,
+        error:
+          connection?.operationalStatus === "action_required"
+            ? connection.lastError ||
+              connection.lastEvent?.message ||
+              current.error
+            : current.error,
       }));
-      return qrResponse;
-    }
+    },
+    []
+  );
 
-    setState((current) => ({
-      ...current,
-      qrCode: status.status === "connected" ? null : current.qrCode,
-      error: status.lastError || null,
-    }));
-    return status;
-  }, [applyConnectionState, clinicId]);
+  const pollConnection =
+    useCallback(async (): Promise<WhatsAppConnectionResponse | null> => {
+      if (!clinicId) return null;
+
+      const status = await getWhatsAppConnectionStatusByClinic(clinicId);
+      applyConnectionState(status);
+      return status;
+    }, [applyConnectionState, clinicId]);
 
   const startPolling = useCallback(() => {
     stopPolling();
-    setState((current) => ({ ...current, pollingActive: true }));
+    setState(current => ({ ...current, pollingActive: true }));
     void pollConnection();
     pollingRef.current = window.setInterval(() => {
       void pollConnection().catch(() => undefined);
@@ -133,25 +142,14 @@ export function useClinicWhatsAppConnection(clinicId: string | null) {
   const loadConnection = useCallback(async () => {
     if (!clinicId) return;
 
-    setState((current) => ({ ...current, loading: true, error: null }));
+    setState(current => ({ ...current, loading: true, error: null }));
     try {
       const existing = await getWhatsAppConnectionStatusByClinic(clinicId);
-      setState((current) => ({
+      setState(current => ({
         ...current,
         connection: existing,
-        qrCode: existing.status === "connected" ? null : current.qrCode,
         error: existing.lastError || null,
       }));
-
-      if (existing.status === "qr_pending") {
-        const qrResponse = await getWhatsAppConnectionQrByClinic(clinicId);
-        setState((current) => ({
-          ...current,
-          connection: qrResponse,
-          qrCode: qrResponse.qrCode,
-          error: qrResponse.lastError || null,
-        }));
-      }
 
       if (shouldKeepPolling(existing)) {
         startPolling();
@@ -161,10 +159,9 @@ export function useClinicWhatsAppConnection(clinicId: string | null) {
     } catch (error) {
       if (error instanceof WhatsAppApiError && error.status === 404) {
         stopPolling();
-        setState((current) => ({
+        setState(current => ({
           ...current,
           connection: null,
-          qrCode: null,
           error: null,
           loading: false,
         }));
@@ -172,13 +169,12 @@ export function useClinicWhatsAppConnection(clinicId: string | null) {
       }
 
       stopPolling();
-      setState((current) => ({
+      setState(current => ({
         ...current,
-        connection: current.connection,
         error: getFriendlyError(error),
       }));
     } finally {
-      setState((current) => ({ ...current, loading: false }));
+      setState(current => ({ ...current, loading: false }));
     }
   }, [clinicId, startPolling, stopPolling]);
 
@@ -188,80 +184,105 @@ export function useClinicWhatsAppConnection(clinicId: string | null) {
     return () => stopPolling();
   }, [clinicId, loadConnection, stopPolling]);
 
-  const startConnection = useCallback(async () => {
-    if (!clinicId) return null;
+  const startConnection = useCallback(
+    async (clinicName?: string | null) => {
+      if (!clinicId) return null;
 
-    setState((current) => ({ ...current, isStarting: true, loading: true, error: null }));
-    try {
-      const currentConnection = state.connection;
-      if (currentConnection && isCooldownActive(currentConnection)) {
-        const cooldownError = buildCooldownError(currentConnection);
-        setState((current) => ({
-          ...current,
-          error: cooldownError,
-        }));
-        return currentConnection;
-      }
+      setState(current => ({
+        ...current,
+        isStarting: true,
+        loading: true,
+        error: null,
+      }));
 
-      let started: WhatsAppConnectionResponse;
       try {
-        started = await startWhatsAppConnectionByClinic(clinicId);
-      } catch (error) {
-        const shouldFallback =
-          error instanceof WhatsAppApiError &&
-          (error.status === 404 || error.status === 405 || error.status === 501);
+        const session = await createWhatsAppEmbeddedSignupSessionByClinic(
+          clinicId,
+          clinicName ?? null
+        );
+        setState(current => ({
+          ...current,
+          connection: session.connection,
+        }));
 
-        if (!shouldFallback) throw error;
-
-        const connection = await getOrCreateConnectionByClinic(clinicId);
-        started = await startWhatsAppConnection(connection.connectionId);
-      }
-      setState((current) => ({
-        ...current,
-        connection: started,
-        qrCode: started.status === "connected" ? null : current.qrCode,
-        error: started.lastError || null,
-      }));
-
-      let latest: ConnectionSnapshot = started;
-      if (started.status === "qr_pending" || shouldKeepPolling(started)) {
-        for (let attempt = 0; attempt < 10; attempt += 1) {
-          latest = (await pollConnection()) || latest;
-          if (
-            latest.status === "connected" ||
-            latest.status === "error" ||
-            latest.manualActionRequired ||
-            ("qrCode" in latest && latest.qrCode)
-          ) {
-            break;
-          }
-
-          await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+        const popup = openPopup(session.launchUrl);
+        if (!popup) {
+          throw new Error(
+            "O navegador bloqueou a janela da Meta. Libere pop-ups e tente novamente."
+          );
         }
-      }
 
-      if (shouldKeepPolling(latest)) {
-        startPolling();
-      } else {
+        const callbackPayload = await waitForPopupCallback(
+          popup,
+          session.state
+        );
+        popup.close();
+
+        if (callbackPayload.error) {
+          throw new Error(
+            callbackPayload.errorDescription ||
+              callbackPayload.errorReason ||
+              "A Meta não concluiu o onboarding oficial do WhatsApp."
+          );
+        }
+
+        const authorizationCode = String(callbackPayload.code || "").trim();
+        if (!authorizationCode) {
+          throw new Error(
+            "A Meta não retornou o authorization code do onboarding oficial."
+          );
+        }
+
+        const completed = await completeWhatsAppEmbeddedSignup(
+          session.connection.connectionId,
+          {
+            state: callbackPayload.state || session.state,
+            authorizationCode,
+            businessAccountId: callbackPayload.businessAccountId ?? null,
+            wabaId: callbackPayload.wabaId ?? null,
+            phoneNumberId: callbackPayload.phoneNumberId ?? null,
+            displayPhoneNumber: callbackPayload.displayPhoneNumber ?? null,
+            verifiedName: callbackPayload.verifiedName ?? null,
+            metadata: {
+              source: META_EMBEDDED_SIGNUP_MESSAGE_TYPE,
+            },
+          }
+        );
+
+        setState(current => ({
+          ...current,
+          connection: completed,
+          error: completed.lastError || null,
+        }));
+
+        if (shouldKeepPolling(completed)) {
+          startPolling();
+        } else {
+          stopPolling();
+        }
+
+        return completed;
+      } catch (error) {
         stopPolling();
+        setState(current => ({
+          ...current,
+          error: getFriendlyError(error),
+        }));
+        throw error;
+      } finally {
+        setState(current => ({
+          ...current,
+          isStarting: false,
+          loading: false,
+        }));
       }
-
-      return latest;
-    } catch (error) {
-      stopPolling();
-      setState((current) => ({
-        ...current,
-        error: getFriendlyError(error),
-      }));
-      throw error;
-    } finally {
-      setState((current) => ({ ...current, isStarting: false, loading: false }));
-    }
-  }, [clinicId, pollConnection, startPolling, state.connection, stopPolling]);
+    },
+    [clinicId, startPolling, stopPolling]
+  );
 
   const refreshConnection = useCallback(async () => {
     if (!clinicId) return null;
-    setState((current) => ({ ...current, loading: true, error: null }));
+    setState(current => ({ ...current, loading: true, error: null }));
     try {
       const latest = await pollConnection();
       if (!latest) return null;
@@ -273,13 +294,13 @@ export function useClinicWhatsAppConnection(clinicId: string | null) {
       return latest;
     } catch (error) {
       stopPolling();
-      setState((current) => ({
+      setState(current => ({
         ...current,
         error: getFriendlyError(error),
       }));
       throw error;
     } finally {
-      setState((current) => ({ ...current, loading: false }));
+      setState(current => ({ ...current, loading: false }));
     }
   }, [clinicId, pollConnection, startPolling, stopPolling]);
 
@@ -292,20 +313,17 @@ export function useClinicWhatsAppConnection(clinicId: string | null) {
       };
     }
 
-    if (connection.status === "connected") {
+    if (connection.operationalStatus === "active") {
       return { label: "Conectado", tone: "positive" as const };
     }
-    if (isCooldownActive(connection) || connection.pairingBlocked) {
-      return { label: "Em pausa", tone: "warning" as const };
+    if (connection.operationalStatus === "onboarding") {
+      return { label: "Em onboarding", tone: "warning" as const };
     }
-    if (connection.status === "qr_pending") {
-      return { label: "QR disponível", tone: "warning" as const };
-    }
-    if (connection.isRecovering || connection.status === "creating") {
-      return { label: "Reconectando", tone: "warning" as const };
-    }
-    if (connection.manualActionRequired) {
+    if (connection.operationalStatus === "action_required") {
       return { label: "Exige ação", tone: "critical" as const };
+    }
+    if (connection.verificationStatus === "pending") {
+      return { label: "Verificando", tone: "warning" as const };
     }
     return { label: "Sem conexão", tone: "critical" as const };
   }, [state.connection]);
