@@ -9,6 +9,8 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import { Users, TrendingUp, Calendar, Activity, LayoutDashboard } from "lucide-react";
+import { getAppOrigin } from "@/lib/appOrigin";
+import { getOriginHostname } from "@/lib/runtimeEnvironment";
 
 const CALENDAR_EVENTS = [
   { title: "Dr. Ana Lima — Consulta", start: new Date().toISOString().slice(0, 10) + "T09:00:00", end: new Date().toISOString().slice(0, 10) + "T09:45:00", color: "var(--cc-primary)" },
@@ -47,6 +49,7 @@ export default function ProductDemoSection() {
   const titleRef = useRef(null);
   const titleInView = useInView(titleRef, { once: true, margin: "-100px" });
   const [activeTab, setActiveTab] = useState<"dashboard" | "calendar">("dashboard");
+  const appHostname = getOriginHostname(getAppOrigin()) || "app.cliniccortex.com.br";
 
   return (
     <section id="demo" className="relative py-24 lg:py-32 bg-[var(--cc-bg-white)] overflow-hidden">
@@ -97,7 +100,7 @@ export default function ProductDemoSection() {
             </div>
             <div className="flex-1 mx-4">
               <div className="cc-home-panel rounded-lg px-3 py-1 text-xs text-[var(--cc-text-muted)] font-['Space_Grotesk'] max-w-xs">
-                app.cliniccortex.com.br
+                {appHostname}
               </div>
             </div>
             <div className="flex items-center gap-1.5">
