@@ -6,9 +6,14 @@ import {
   type WhatsAppConnectionResponse,
 } from "@/lib/whatsappApi";
 import {
+  getValidatedMetaLaunchUrl,
   isMetaEmbeddedSignupCallbackPayload,
+  MetaEmbeddedSignupConfigurationError,
+  MetaEmbeddedSignupSdkUnavailableError,
   META_EMBEDDED_SIGNUP_MESSAGE_TYPE,
+  startMetaEmbeddedSignupWithSdk,
   type MetaEmbeddedSignupCallbackPayload,
+  type MetaEmbeddedSignupSession,
 } from "@/lib/whatsappEmbeddedSignup";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -21,9 +26,40 @@ type ClinicWhatsAppState = {
 };
 
 function getFriendlyError(error: unknown) {
+  if (error instanceof MetaEmbeddedSignupConfigurationError) {
+    return error.publicMessage;
+  }
+  if (
+    error &&
+    typeof error === "object" &&
+    "publicMessage" in error &&
+    typeof (error as { publicMessage?: unknown }).publicMessage === "string"
+  ) {
+    return (error as { publicMessage: string }).publicMessage;
+  }
   if (error instanceof WhatsAppApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Não foi possível comunicar com o serviço oficial do WhatsApp.";
+}
+
+function logWhatsAppError(context: string, error: unknown) {
+  if (error instanceof WhatsAppApiError) {
+    console.warn(`[WhatsApp Meta] ${context}`, {
+      status: error.status,
+      diagnostic: error.diagnostic,
+    });
+    return;
+  }
+
+  if (error instanceof MetaEmbeddedSignupConfigurationError) {
+    console.warn(`[WhatsApp Meta] ${context}`, {
+      diagnosticMessage: error.diagnosticMessage,
+      diagnostic: error.diagnostic,
+    });
+    return;
+  }
+
+  console.warn(`[WhatsApp Meta] ${context}`, error);
 }
 
 function shouldKeepPolling(connection: WhatsAppConnectionResponse | null) {
@@ -38,6 +74,22 @@ function openPopup(url: string) {
     "cliniccortex-meta-whatsapp",
     "width=540,height=720,menubar=no,toolbar=no,status=no,location=yes,resizable=yes,scrollbars=yes"
   );
+}
+
+async function startMetaEmbeddedSignupWithUrlFallback(
+  session: MetaEmbeddedSignupSession
+) {
+  const popup = openPopup(getValidatedMetaLaunchUrl(session));
+  if (!popup) {
+    throw new Error(
+      "O navegador bloqueou a janela da Meta. Libere pop-ups e tente novamente."
+    );
+  }
+
+  const callbackPayload = await waitForPopupCallback(popup, session.state);
+  popup.close();
+
+  return callbackPayload;
 }
 
 function waitForPopupCallback(popup: Window, expectedState: string) {
@@ -205,18 +257,22 @@ export function useClinicWhatsAppConnection(clinicId: string | null) {
           connection: session.connection,
         }));
 
-        const popup = openPopup(session.launchUrl);
-        if (!popup) {
-          throw new Error(
-            "O navegador bloqueou a janela da Meta. Libere pop-ups e tente novamente."
+        let callbackPayload: MetaEmbeddedSignupCallbackPayload;
+        try {
+          callbackPayload = await startMetaEmbeddedSignupWithSdk(session);
+        } catch (sdkError) {
+          if (!(sdkError instanceof MetaEmbeddedSignupSdkUnavailableError)) {
+            throw sdkError;
+          }
+
+          console.warn(
+            "[WhatsApp Meta] SDK indisponível. Tentando fallback por URL direta.",
+            sdkError
+          );
+          callbackPayload = await startMetaEmbeddedSignupWithUrlFallback(
+            session
           );
         }
-
-        const callbackPayload = await waitForPopupCallback(
-          popup,
-          session.state
-        );
-        popup.close();
 
         if (callbackPayload.error) {
           throw new Error(
@@ -227,9 +283,10 @@ export function useClinicWhatsAppConnection(clinicId: string | null) {
         }
 
         const authorizationCode = String(callbackPayload.code || "").trim();
-        if (!authorizationCode) {
+        const accessToken = String(callbackPayload.accessToken || "").trim();
+        if (!authorizationCode && !accessToken) {
           throw new Error(
-            "A Meta não retornou o authorization code do onboarding oficial."
+            "A Meta não retornou authorization code nem access token do onboarding oficial."
           );
         }
 
@@ -237,12 +294,16 @@ export function useClinicWhatsAppConnection(clinicId: string | null) {
           session.connection.connectionId,
           {
             state: callbackPayload.state || session.state,
-            authorizationCode,
+            authorizationCode: authorizationCode || undefined,
+            accessToken: accessToken || undefined,
             businessAccountId: callbackPayload.businessAccountId ?? null,
             wabaId: callbackPayload.wabaId ?? null,
             phoneNumberId: callbackPayload.phoneNumberId ?? null,
             displayPhoneNumber: callbackPayload.displayPhoneNumber ?? null,
             verifiedName: callbackPayload.verifiedName ?? null,
+            grantedScopes: callbackPayload.grantedScopes ?? null,
+            tokenExpiresInSeconds:
+              callbackPayload.tokenExpiresInSeconds ?? null,
             metadata: {
               source: META_EMBEDDED_SIGNUP_MESSAGE_TYPE,
             },
@@ -263,6 +324,7 @@ export function useClinicWhatsAppConnection(clinicId: string | null) {
 
         return completed;
       } catch (error) {
+        logWhatsAppError("Falha ao iniciar Embedded Signup.", error);
         stopPolling();
         setState(current => ({
           ...current,

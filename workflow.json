@@ -1,23 +1,47 @@
 {
-  "id": "pSYBr9L3aq58zNdW",
-  "name": "ClinicCortex - WhatsApp AI Agent",
-  "active": true,
+  "id": "9139af5c032b4a79",
+  "name": "ClinicCortex - WhatsApp Cloud API (n8n-only)",
+  "active": false,
   "nodes": [
     {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "cliniccortex-whatsapp",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "id": "37a84303-80ed-4bb9-ae63-e07d4fb246ef",
-      "name": "Webhook",
+      "id": "68d63bdb-7b41-40dc-90de-fdc468a6412a",
+      "name": "Webhook - Start Embedded Signup",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-1312, 624],
-      "webhookId": "e1a10001-cc00-4000-a001-000000000099"
+      "position": [
+        -1840,
+        -640
+      ],
+      "webhookId": "211fa2c3-7ab6-4fc1-a58a-2d937026db72",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp/connections/onboarding/session",
+        "responseMode": "responseNode",
+        "options": {}
+      }
     },
     {
+      "id": "7fc7137f-f247-4631-b5ef-01dd755b30df",
+      "name": "Normalize Start Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1620,
+        -640
+      ],
+      "parameters": {
+        "jsCode": "\nreturn items.map((item) => {\n  const headers = item.json.headers || {};\n  const authHeader = String(headers.authorization || headers.Authorization || \"\").trim();\n  const clinicId = String(item.json.body?.clinicId || item.json.query?.clinicId || \"\").trim();\n  const clinicName = String(item.json.body?.clinicName || \"\").trim() || null;\n\n  if (!clinicId) {\n    return { json: { ok: false, statusCode: 400, error: \"clinicId é obrigatório.\" } };\n  }\n\n  if (!authHeader.startsWith(\"Bearer \")) {\n    return { json: { ok: false, statusCode: 401, error: \"Token de sessão não informado.\" } };\n  }\n\n  return { json: { ok: true, clinicId, clinicName, authHeader } };\n});\n"
+      }
+    },
+    {
+      "id": "2f79a7bd-e4d4-421d-a63f-69f1723746ea",
+      "name": "Start Request Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1400,
+        -640
+      ],
       "parameters": {
         "conditions": {
           "options": {
@@ -27,39 +51,172 @@
           },
           "conditions": [
             {
-              "id": "cond-clinic-id",
-              "leftValue": "={{ $json.body.clinicId }}",
-              "rightValue": "",
+              "id": "86026592-1332-41ee-8464-9fcdd1b5f9d1",
+              "leftValue": "={{ String($json.ok) }}",
+              "rightValue": "true",
               "operator": {
                 "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true
-              }
-            },
-            {
-              "id": "cond-message-text",
-              "leftValue": "={{ $json.body.messageText }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true
+                "operation": "equals"
               }
             }
           ],
           "combinator": "and"
         },
         "options": {}
-      },
-      "id": "49fc32c3-604f-423e-b1ae-f3d83698389e",
-      "name": "Validar Payload",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [-1088, 624]
+      }
     },
     {
+      "id": "1db93be0-4bb1-4ea3-aba9-3ebe66011dc9",
+      "name": "Resolve Start Access",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1180,
+        -760
+      ],
       "parameters": {
-        "url": "={{ ($env.SUPABASE_URL.replace(/\\/$/, '')) + '/rest/v1/clinics?id=eq.' + $('Webhook').first().json.body.clinicId + '&select=id,name,assistant_area,assistant_specialties,assistant_prompt,assistant_personality&limit=1' }}",
+        "method": "POST",
+        "url": "={{ ($env.TEAM_SERVICE_INTERNAL_URL || \"http://team-service:3002\").replace(/\\/$/, \"\") + \"/team/internal/auth/resolve\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Normalize Start Request').first().json.authHeader }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"clinicId\": $('Normalize Start Request').first().json.clinicId, \"requireManage\": true } }}"
+      }
+    },
+    {
+      "id": "a65ba34a-c6b8-4192-b5e7-64d7b0982cad",
+      "name": "Start Access OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        -760
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "362c1231-4474-4899-8909-aa8296181e8d",
+              "leftValue": "={{ String($json.ok) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7126e5b9-8c88-4a32-9635-57d09e465bda",
+      "name": "Get Start Connection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -740,
+        -760
+      ],
+      "parameters": {
+        "url": "={{ ($env.SUPABASE_URL || \"\").replace(/\\/$/, \"\") + \"/rest/v1/whatsapp_connections?clinic_id=eq.\" + encodeURIComponent($('Normalize Start Request').first().json.clinicId) + \"&deleted_at=is.null&select=*&limit=1\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "2b5a5bc3-653c-4a48-9137-9aa824b56319",
+      "name": "Ensure Start Connection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        -760
+      ],
+      "parameters": {
+        "jsCode": "\nlet randomUUID;\ntry {\n  ({ randomUUID } = require(\"node:crypto\"));\n} catch {\n  try {\n    ({ randomUUID } = require(\"crypto\"));\n  } catch {\n    return [\n      {\n        json: {\n          ok: false,\n          errorCode: \"meta_runtime_crypto_unavailable\",\n          error: \"Não foi possível iniciar a conexão oficial do WhatsApp agora.\",\n          publicMessage:\n            \"Não foi possível iniciar a conexão oficial do WhatsApp agora. Tente novamente ou acione o suporte.\",\n          statusCode: 500,\n        },\n      },\n    ];\n  }\n}\n\nconst rows = Array.isArray($json.body) ? $json.body : [];\nconst connection = rows[0] || null;\n\nif (connection?.id) {\n  return [{ json: { ok: true, connection } }];\n}\n\nreturn [\n  {\n    json: {\n      ok: true,\n      needsCreate: true,\n      generatedId: randomUUID(),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "4ac9a5df-99fe-4287-995f-453e4859dad1",
+      "name": "Start Needs Create?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        -760
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "d087d0c0-9667-456e-877e-e73d35f805c9",
+              "leftValue": "={{ String(Boolean($json.needsCreate)) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "21bc5b0a-dd78-40a6-93cb-6f10b7816a00",
+      "name": "Create Start Connection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        -900
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.SUPABASE_URL || \"\").replace(/\\/$/, \"\") + \"/rest/v1/whatsapp_connections\" }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -74,58 +231,707 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
             }
           ]
         },
-        "options": {}
-      },
-      "id": "95c75ed3-e9f7-42ae-9116-d085bea46493",
-      "name": "Buscar Clínica",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [-864, 512]
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"id\": $('Ensure Start Connection').first().json.generatedId, \"clinic_id\": $('Normalize Start Request').first().json.clinicId, \"provider\": \"meta_cloud_api\", \"operational_status\": \"not_connected\", \"onboarding_status\": \"not_started\", \"verification_status\": \"unknown\", \"webhook_status\": \"not_configured\" } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      }
     },
     {
+      "id": "f0ed0d87-0fac-4346-a7b6-b532306df744",
+      "name": "Prepare Start Session Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        140,
+        -760
+      ],
       "parameters": {
-        "fields": {
-          "values": [
+        "jsCode": "\n\nfunction buildSeverity(operationalStatus, verificationStatus, lastError) {\n  if (operationalStatus === \"action_required\" || verificationStatus === \"failed\") return \"critical\";\n  if (operationalStatus === \"onboarding\" || verificationStatus === \"pending\" || lastError) return \"warning\";\n  return \"info\";\n}\n\nfunction serializeConnection(connection) {\n  return {\n    connectionId: connection.id,\n    clinicId: connection.clinic_id,\n    provider: connection.provider || \"meta_cloud_api\",\n    operationalStatus: connection.operational_status,\n    onboardingStatus: connection.onboarding_status,\n    verificationStatus: connection.verification_status,\n    webhookStatus: connection.webhook_status,\n    businessAccountId: connection.business_account_id || null,\n    wabaId: connection.waba_id || null,\n    phoneNumberId: connection.phone_number_id || null,\n    displayPhoneNumber: connection.display_phone_number || null,\n    verifiedName: connection.verified_name || null,\n    lastError: connection.last_error || null,\n    actionRequiredReason:\n      connection.operational_status === \"action_required\"\n        ? connection.last_event_code || null\n        : null,\n    lastEvent:\n      connection.last_event_code || connection.last_event_message || connection.last_error\n        ? {\n            code: connection.last_event_code || \"whatsapp_unknown\",\n            message:\n              connection.last_event_message ||\n              connection.last_error ||\n              \"Evento operacional do WhatsApp.\",\n            severity: buildSeverity(\n              connection.operational_status,\n              connection.verification_status,\n              connection.last_error || null\n            ),\n            occurredAt: connection.last_event_at || null,\n          }\n        : null,\n  };\n}\n\n\nlet randomUUID;\ntry {\n  ({ randomUUID } = require(\"node:crypto\"));\n} catch {\n  try {\n    ({ randomUUID } = require(\"crypto\"));\n  } catch {\n    return [{\n      json: {\n        ok: false,\n        errorCode: \"meta_runtime_crypto_unavailable\",\n        error: \"Não foi possível iniciar a conexão oficial do WhatsApp agora.\",\n        statusCode: 500\n      }\n    }];\n  }\n}\n\nconst source = $json.connection ? $json : { connection: (Array.isArray($json.body) ? $json.body[0] : null) };\nif (!source.connection?.id) {\n  return [{\n    json: {\n      ok: false,\n      errorCode: \"meta_connection_create_failed\",\n      error: \"Não foi possível iniciar a conexão oficial do WhatsApp agora.\",\n      publicMessage: \"Não foi possível iniciar a conexão oficial do WhatsApp agora. Tente novamente ou acione o suporte.\",\n      statusCode: 500\n    }\n  }];\n}\n\nconst appId = String($env.META_APP_ID || \"\").trim();\nconst configId = String($env.META_EMBEDDED_SIGNUP_CONFIG_ID || \"\").trim();\nconst redirectUri = String($env.META_EMBEDDED_SIGNUP_REDIRECT_URI || \"\").trim();\nif (!appId || !configId || !redirectUri) {\n  return [{\n    json: {\n      ok: false,\n      errorCode: \"meta_embedded_signup_config_missing\",\n      error: \"Não foi possível iniciar a conexão oficial do WhatsApp agora.\",\n      publicMessage: \"Não foi possível iniciar a conexão oficial do WhatsApp agora. Tente novamente ou acione o suporte.\",\n      statusCode: 503,\n      missingFields: [\n        !appId ? \"META_APP_ID\" : null,\n        !configId ? \"META_EMBEDDED_SIGNUP_CONFIG_ID\" : null,\n        !redirectUri ? \"META_EMBEDDED_SIGNUP_REDIRECT_URI\" : null,\n      ].filter(Boolean)\n    }\n}];\n}\n\ntry {\n  const state = randomUUID();\n  const graphVersion = String($env.META_GRAPH_VERSION || \"v23.0\").trim();\n  const scopeText = String($env.META_EMBEDDED_SIGNUP_SCOPES || \"business_management,whatsapp_business_management,whatsapp_business_messaging\");\n  const scopes = scopeText.split(\",\").map((scope) => scope.trim()).filter(Boolean);\n  const clinicName = String($('Normalize Start Request').first().json.clinicName || \"\").trim();\n  const extras = {\n    feature: \"whatsapp_embedded_signup\",\n    sessionInfoVersion: \"3\",\n    setup: clinicName ? { business: { name: clinicName } } : {},\n  };\n  const launchParams = [\n    [\"client_id\", appId],\n    [\"redirect_uri\", redirectUri],\n    [\"state\", state],\n    [\"config_id\", configId],\n    [\"response_type\", \"code\"],\n    [\"override_default_response_type\", \"true\"],\n    [\"scope\", scopeText],\n    [\"extras\", JSON.stringify(extras)],\n  ];\n  const launchUrl =\n    \"https://www.facebook.com/\" +\n    graphVersion +\n    \"/dialog/oauth?\" +\n    launchParams\n      .map(([key, value]) => encodeURIComponent(String(key)) + \"=\" + encodeURIComponent(String(value)))\n      .join(\"&\");\n\n  return [{\n    json: {\n      ok: true,\n      connection: serializeConnection({\n        ...source.connection,\n        operational_status: \"onboarding\",\n        onboarding_status: \"embedded_signup_started\",\n        webhook_status: String($env.META_WEBHOOK_VERIFY_TOKEN || \"\").trim() ? \"verify_pending\" : \"not_configured\",\n        onboarding_state: state,\n        onboarding_started_at: new Date().toISOString(),\n        last_error: null,\n        last_event_code: \"meta_embedded_signup_started\",\n        last_event_message: \"Aguardando autorização oficial da Meta para conectar o WhatsApp.\",\n        last_event_at: new Date().toISOString(),\n      }),\n      state,\n      redirectUri,\n      launchUrl,\n      appId,\n      configId,\n      graphVersion,\n      scopes,\n      extras,\n    }\n  }];\n} catch (error) {\n  return [{\n    json: {\n      ok: false,\n      errorCode: \"meta_embedded_signup_session_prepare_failed\",\n      error: \"Não foi possível iniciar a conexão oficial do WhatsApp agora.\",\n      publicMessage: \"Não foi possível iniciar a conexão oficial do WhatsApp agora. Tente novamente ou acione o suporte.\",\n      statusCode: 500,\n      diagnostic: {\n        stage: \"prepare_start_session_response\",\n        message: error instanceof Error ? error.message : String(error),\n      },\n    }\n  }];\n}\n"
+      }
+    },
+    {
+      "id": "658492e7-df2a-45d1-9e2f-0996e6c05b52",
+      "name": "Respond Start Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.3,
+      "position": [
+        -1180,
+        -500
+      ],
+      "parameters": {
+        "options": {
+          "responseCode": "={{ $json.statusCode || 400 }}"
+        },
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      }
+    },
+    {
+      "id": "9c73fff4-86f2-4974-8d3f-e05889600aee",
+      "name": "Start Session Prepared?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        360,
+        -760
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
             {
-              "name": "clinicId",
-              "stringValue": "={{ $('Webhook').first().json.body.clinicId }}"
+              "id": "8257a93a-a99b-4e28-b0c5-787ca06296d5",
+              "leftValue": "={{ String($json.ok) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "67a38b82-c035-47e9-8938-0757e1c652ea",
+      "name": "Respond Start Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.3,
+      "position": [
+        580,
+        -760
+      ],
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        },
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      }
+    },
+    {
+      "id": "76c059cb-f208-4ef9-b740-2fbc857f5fbd",
+      "name": "Webhook - Connection Status",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1840,
+        -40
+      ],
+      "webhookId": "fe0b3641-f2ff-425b-909e-12abdbc92d1b",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp/connections/status",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "60db59c9-bccf-4be4-9faa-6c9f172b71c7",
+      "name": "Normalize Status Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1620,
+        -40
+      ],
+      "parameters": {
+        "jsCode": "\nreturn items.map((item) => {\n  const headers = item.json.headers || {};\n  const authHeader = String(headers.authorization || headers.Authorization || \"\").trim();\n  const clinicId = String(item.json.query?.clinicId || item.json.body?.clinicId || \"\").trim();\n\n  if (!clinicId) {\n    return { json: { ok: false, statusCode: 400, error: \"clinicId é obrigatório.\" } };\n  }\n\n  if (!authHeader.startsWith(\"Bearer \")) {\n    return { json: { ok: false, statusCode: 401, error: \"Token de sessão não informado.\" } };\n  }\n\n  return { json: { ok: true, clinicId, authHeader } };\n});\n"
+      }
+    },
+    {
+      "id": "dc57ea89-6cb2-47cc-aa1b-7638e7fa7bc2",
+      "name": "Status Request Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1400,
+        -40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b5796b8b-6c8b-49c8-9a9a-9b179cb51dfb",
+              "leftValue": "={{ String($json.ok) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3079cdf0-1e16-4047-89b0-ca91a214786e",
+      "name": "Resolve Status Access",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1180,
+        -160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.TEAM_SERVICE_INTERNAL_URL || \"http://team-service:3002\").replace(/\\/$/, \"\") + \"/team/internal/auth/resolve\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Normalize Status Request').first().json.authHeader }}"
             },
             {
-              "name": "clinicName",
-              "stringValue": "={{ $('Buscar Clínica').first().json.name ?? 'Clínica' }}"
-            },
-            {
-              "name": "assistantName",
-              "stringValue": "Cortex AI"
-            },
-            {
-              "name": "assistantPersonality",
-              "stringValue": "={{ $('Buscar Clínica').first().json.assistant_personality ?? 'executivo' }}"
-            },
-            {
-              "name": "assistantSpecialties",
-              "stringValue": "={{ Array.isArray($('Buscar Clínica').first().json.assistant_specialties) && $('Buscar Clínica').first().json.assistant_specialties.length ? $('Buscar Clínica').first().json.assistant_specialties.join(', ') : 'Não informado' }}"
-            },
-            {
-              "name": "patientMessage",
-              "stringValue": "={{ $('Webhook').first().json.body.messageText }}"
-            },
-            {
-              "name": "systemPrompt",
-              "stringValue": "={{ (() => { const clinic = $('Buscar Clínica').first().json || {}; const clinicName = String(clinic.name || '').trim() || 'Clínica'; const assistantPersonality = String(clinic.assistant_personality || '').trim() || 'executivo'; const specialties = Array.isArray(clinic.assistant_specialties) && clinic.assistant_specialties.length ? clinic.assistant_specialties.join(', ') : 'Não informado'; const basePrompt = String(clinic.assistant_prompt || '').trim() || ('Você é Cortex AI, assistente virtual da ' + clinicName + '. Responda sempre em português do Brasil, com linguagem clara, profissional e objetiva. Nunca invente informações. Se faltar contexto, diga isso com transparência e peça esclarecimentos antes de seguir. Mantenha um tom ' + assistantPersonality + '.'); return [basePrompt, '---', 'REGRAS DE EXECUÇÃO ADICIONAIS', 'Nome oficial da clínica: ' + clinicName, 'Especialidades cadastradas: ' + specialties, '- Ao se apresentar, use o nome oficial da clínica sempre que ele estiver disponível.', '- Se o paciente quiser agendar e ainda não tiver escolhido um serviço ou especialidade, apresente primeiro as opções que você conhece no contexto antes de pedir a preferência.', '- Não peça nome de profissional se o contexto não trouxer uma lista explícita de profissionais cadastrados.', '- Se houver apenas um serviço disponível no contexto, ofereça esse serviço de forma natural.', '- Nunca se apresente apenas como assistente virtual da Clínica quando o nome oficial estiver disponível.'].join('\\n\\n'); })() }}"
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"clinicId\": $('Normalize Status Request').first().json.clinicId, \"requireManage\": false } }}"
+      }
+    },
+    {
+      "id": "71989972-2e5c-4cae-bca7-5e6cc59bd061",
+      "name": "Status Access OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        -160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "0c5d5ad1-ac75-4293-a638-ed447cdd97bc",
+              "leftValue": "={{ String($json.ok) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
         "options": {}
-      },
-      "id": "f6195f8c-0407-4a6e-adb1-24acde94128a",
-      "name": "Montar Contexto",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3,
-      "position": [-640, 512]
+      }
+    },
+    {
+      "id": "3c123d44-2ece-46df-b49d-469784d9c137",
+      "name": "Get Status Connection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -740,
+        -160
+      ],
+      "parameters": {
+        "url": "={{ ($env.SUPABASE_URL || \"\").replace(/\\/$/, \"\") + \"/rest/v1/whatsapp_connections?clinic_id=eq.\" + encodeURIComponent($('Normalize Status Request').first().json.clinicId) + \"&deleted_at=is.null&select=*&limit=1\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "10f8c693-f7b2-4aa5-b2ca-e786ef5db666",
+      "name": "Serialize Status Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        -160
+      ],
+      "parameters": {
+        "jsCode": "\n\nfunction buildSeverity(operationalStatus, verificationStatus, lastError) {\n  if (operationalStatus === \"action_required\" || verificationStatus === \"failed\") return \"critical\";\n  if (operationalStatus === \"onboarding\" || verificationStatus === \"pending\" || lastError) return \"warning\";\n  return \"info\";\n}\n\nfunction serializeConnection(connection) {\n  return {\n    connectionId: connection.id,\n    clinicId: connection.clinic_id,\n    provider: connection.provider || \"meta_cloud_api\",\n    operationalStatus: connection.operational_status,\n    onboardingStatus: connection.onboarding_status,\n    verificationStatus: connection.verification_status,\n    webhookStatus: connection.webhook_status,\n    businessAccountId: connection.business_account_id || null,\n    wabaId: connection.waba_id || null,\n    phoneNumberId: connection.phone_number_id || null,\n    displayPhoneNumber: connection.display_phone_number || null,\n    verifiedName: connection.verified_name || null,\n    lastError: connection.last_error || null,\n    actionRequiredReason:\n      connection.operational_status === \"action_required\"\n        ? connection.last_event_code || null\n        : null,\n    lastEvent:\n      connection.last_event_code || connection.last_event_message || connection.last_error\n        ? {\n            code: connection.last_event_code || \"whatsapp_unknown\",\n            message:\n              connection.last_event_message ||\n              connection.last_error ||\n              \"Evento operacional do WhatsApp.\",\n            severity: buildSeverity(\n              connection.operational_status,\n              connection.verification_status,\n              connection.last_error || null\n            ),\n            occurredAt: connection.last_event_at || null,\n          }\n        : null,\n  };\n}\n\n\nreturn items.map((item) => {\n  const connection = item.json.connection || item.json.body?.[0] || null;\n  if (!connection?.id) {\n    return {\n      json: {\n        error: \"Nenhuma conexão WhatsApp encontrada para esta clínica.\",\n        statusCode: 404,\n      },\n    };\n  }\n\n  return {\n    json: serializeConnection(connection),\n  };\n});\n"
+      }
+    },
+    {
+      "id": "15611dbd-49ee-4e39-a9ef-17d29bd86425",
+      "name": "Respond Status Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.3,
+      "position": [
+        -1180,
+        100
+      ],
+      "parameters": {
+        "options": {
+          "responseCode": "={{ $json.statusCode || 400 }}"
+        },
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      }
+    },
+    {
+      "id": "c0207492-376e-41c0-a6bc-3931f46cfc14",
+      "name": "Respond Status Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.3,
+      "position": [
+        -300,
+        -160
+      ],
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        },
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      }
+    },
+    {
+      "id": "e59da311-dd4d-4dad-b344-cda4af663eb8",
+      "name": "Webhook - Complete Embedded Signup",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1840,
+        560
+      ],
+      "webhookId": "c0d534ae-d09b-4b77-a202-162c26da9f79",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp/connections/onboarding/complete",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "9869b95c-ebe8-4607-816c-0df05266247e",
+      "name": "Normalize Complete Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1620,
+        560
+      ],
+      "parameters": {
+        "jsCode": "\nreturn items.map((item) => {\n  const headers = item.json.headers || {};\n  const authHeader = String(headers.authorization || headers.Authorization || \"\").trim();\n  const connectionId = String(item.json.body?.connectionId || \"\").trim();\n  const body = item.json.body || {};\n\n  if (!connectionId) {\n    return { json: { ok: false, statusCode: 400, error: \"connectionId é obrigatório.\" } };\n  }\n\n  if (!authHeader.startsWith(\"Bearer \")) {\n    return { json: { ok: false, statusCode: 401, error: \"Token de sessão não informado.\" } };\n  }\n\n  if (!String(body.state || \"\").trim()) {\n    return { json: { ok: false, statusCode: 400, error: \"state é obrigatório para concluir o onboarding oficial.\" } };\n  }\n\n  if (!String(body.authorizationCode || \"\").trim() && !String(body.accessToken || \"\").trim()) {\n    return { json: { ok: false, statusCode: 400, error: \"A Meta não retornou um authorization code ou access token válido.\" } };\n  }\n\n  return { json: { ok: true, connectionId, authHeader, body } };\n});\n"
+      }
+    },
+    {
+      "id": "695e65c4-cdf6-4d98-b297-b4d1017408d1",
+      "name": "Complete Request Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1400,
+        560
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "0ffeec65-5d8f-4a0e-bb57-880e1b4d318d",
+              "leftValue": "={{ String($json.ok) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "87b7b3b6-ae2d-4838-b57a-e093f16fc0e8",
+      "name": "Get Complete Connection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1180,
+        440
+      ],
+      "parameters": {
+        "url": "={{ ($env.SUPABASE_URL || \"\").replace(/\\/$/, \"\") + \"/rest/v1/whatsapp_connections?id=eq.\" + encodeURIComponent($('Normalize Complete Request').first().json.connectionId) + \"&deleted_at=is.null&select=*&limit=1\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "d4c3b5ba-634b-4852-aedc-ca324467443c",
+      "name": "Prepare Complete Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        440
+      ],
+      "parameters": {
+        "jsCode": "\nconst rows = Array.isArray($json.body) ? $json.body : [];\nconst connection = rows[0] || null;\nif (!connection?.id) {\n  return [{ json: { ok: false, statusCode: 404, error: \"Conexão WhatsApp não encontrada.\" } }];\n}\n\nconst request = $(\"Normalize Complete Request\").first().json;\nif (String(request.body.state || \"\").trim() !== String(connection.onboarding_state || \"\").trim()) {\n  return [{ json: { ok: false, statusCode: 400, error: \"O retorno do Embedded Signup não corresponde ao onboarding iniciado.\" } }];\n}\n\nreturn [{ json: { ok: true, connection, request } }];\n"
+      }
+    },
+    {
+      "id": "dfa14635-0dd9-4723-a58a-65d42bb3cb14",
+      "name": "Complete Context OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -740,
+        440
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "49f552a7-a817-4e84-9eb7-90ccb8f24001",
+              "leftValue": "={{ String($json.ok) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d0d6d866-f44c-4e20-91f0-eec68250ce83",
+      "name": "Resolve Complete Access",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -520,
+        320
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.TEAM_SERVICE_INTERNAL_URL || \"http://team-service:3002\").replace(/\\/$/, \"\") + \"/team/internal/auth/resolve\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Normalize Complete Request').first().json.authHeader }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"clinicId\": $('Prepare Complete Context').first().json.connection.clinic_id, \"requireManage\": true } }}"
+      }
+    },
+    {
+      "id": "9f1a02e8-0938-4c23-a09f-0631cdf74450",
+      "name": "Complete Access OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        320
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "fe990ffd-cb8e-4a99-95b7-da6fa98fbb8c",
+              "leftValue": "={{ String($json.ok) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e4ca17cd-6cf1-434a-971b-2b8b8d7a9af4",
+      "name": "Exchange Complete Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        320
+      ],
+      "parameters": {
+        "url": "={{ \"https://graph.facebook.com/\" + ($env.META_GRAPH_VERSION || \"v23.0\") + \"/oauth/access_token?client_id=\" + encodeURIComponent($env.META_APP_ID || \"\") + \"&client_secret=\" + encodeURIComponent($env.META_APP_SECRET || \"\") + \"&redirect_uri=\" + encodeURIComponent($env.META_EMBEDDED_SIGNUP_REDIRECT_URI || \"\") + \"&code=\" + encodeURIComponent($('Normalize Complete Request').first().json.body.authorizationCode || \"\") }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "b7d4a6a5-3c4f-406e-871e-55ab42594351",
+      "name": "Finalize Complete Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        140,
+        440
+      ],
+      "parameters": {
+        "jsCode": "\nconst request = $(\"Normalize Complete Request\").first().json;\nconst context = $(\"Prepare Complete Context\").first().json;\nconst authResult = $(\"Resolve Complete Access\").first().json;\nif (!authResult.ok) {\n  return [{ json: authResult }];\n}\n\nconst accessToken = String(request.body.accessToken || \"\").trim() || String($(\"Exchange Complete Token\").first().json.body?.access_token || \"\").trim();\nif (!accessToken) {\n  return [{ json: { error: \"A Meta não retornou um access token válido para o WhatsApp.\", statusCode: 502 } }];\n}\n\nif (!String(request.body.wabaId || \"\").trim() || !String(request.body.phoneNumberId || \"\").trim()) {\n  return [{ json: { error: \"O callback da Meta precisa retornar wabaId e phoneNumberId para concluir o onboarding oficial.\", statusCode: 400 } }];\n}\n\nconst secret = String($env.WHATSAPP_TOKEN_ENCRYPTION_KEY || \"\").trim();\nif (!secret) {\n  return [{ json: { error: \"A chave de criptografia das credenciais oficiais do WhatsApp não está configurada.\", statusCode: 503 } }];\n}\n\nfunction toKeyBuffer(value) {\n  try {\n    const decoded = Buffer.from(value, \"base64\");\n    if (decoded.length === 32) return decoded;\n  } catch {}\n  return require(\"crypto\").createHash(\"sha256\").update(value, \"utf8\").digest();\n}\n\nconst nodeCrypto = require(\"crypto\");\nconst iv = nodeCrypto.randomBytes(12);\nconst cipher = nodeCrypto.createCipheriv(\"aes-256-gcm\", toKeyBuffer(secret), iv);\nconst encrypted = Buffer.concat([cipher.update(accessToken, \"utf8\"), cipher.final()]);\nconst tag = cipher.getAuthTag();\nconst encryptedAccessToken = \"v1.\" + iv.toString(\"base64url\") + \".\" + tag.toString(\"base64url\") + \".\" + encrypted.toString(\"base64url\");\n\nreturn [{\n  json: {\n    credentialPayload: {\n      connection_id: context.connection.id,\n      encrypted_access_token: encryptedAccessToken,\n      granted_scopes:\n        Array.isArray(request.body.grantedScopes) && request.body.grantedScopes.length\n          ? request.body.grantedScopes\n          : String($env.META_EMBEDDED_SIGNUP_SCOPES || \"business_management,whatsapp_business_management,whatsapp_business_messaging\").split(\",\"),\n      token_obtained_at: new Date().toISOString(),\n      token_expires_at:\n        typeof request.body.tokenExpiresAt === \"string\" && request.body.tokenExpiresAt.trim()\n          ? request.body.tokenExpiresAt.trim()\n          : null,\n      metadata:\n        request.body.metadata && typeof request.body.metadata === \"object\"\n          ? request.body.metadata\n          : null,\n    },\n    connectionPayload: {\n      provider: \"meta_cloud_api\",\n      operational_status: \"active\",\n      onboarding_status: \"completed\",\n      verification_status: \"verified\",\n      webhook_status: \"subscribed\",\n      business_account_id: request.body.businessAccountId || null,\n      waba_id: request.body.wabaId,\n      phone_number_id: request.body.phoneNumberId,\n      display_phone_number: request.body.displayPhoneNumber || null,\n      verified_name: request.body.verifiedName || null,\n      onboarding_state: null,\n      last_error: null,\n      last_event_code: \"meta_whatsapp_connected\",\n      last_event_message: \"WhatsApp conectado com sucesso via Meta Cloud API.\",\n      last_event_at: new Date().toISOString()\n    }\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "6aa6560a-67c9-4682-b8b2-fc42c3c7404f",
+      "name": "Persist Complete Credentials",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        360,
+        320
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.SUPABASE_URL || \"\").replace(/\\/$/, \"\") + \"/rest/v1/whatsapp_connection_credentials?on_conflict=connection_id\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Finalize Complete Response').first().json.credentialPayload }}"
+      }
+    },
+    {
+      "id": "e728674d-9a5c-4eed-b8bc-1c6055042616",
+      "name": "Persist Complete Connection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        580,
+        320
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($env.SUPABASE_URL || \"\").replace(/\\/$/, \"\") + \"/rest/v1/whatsapp_connections?id=eq.\" + encodeURIComponent($('Prepare Complete Context').first().json.connection.id) + \"&select=*\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Finalize Complete Response').first().json.connectionPayload }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "7bb55eef-9f3e-436c-824f-75b0edc8eade",
+      "name": "Serialize Complete Persisted Connection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        320
+      ],
+      "parameters": {
+        "jsCode": "\n\nfunction buildSeverity(operationalStatus, verificationStatus, lastError) {\n  if (operationalStatus === \"action_required\" || verificationStatus === \"failed\") return \"critical\";\n  if (operationalStatus === \"onboarding\" || verificationStatus === \"pending\" || lastError) return \"warning\";\n  return \"info\";\n}\n\nfunction serializeConnection(connection) {\n  return {\n    connectionId: connection.id,\n    clinicId: connection.clinic_id,\n    provider: connection.provider || \"meta_cloud_api\",\n    operationalStatus: connection.operational_status,\n    onboardingStatus: connection.onboarding_status,\n    verificationStatus: connection.verification_status,\n    webhookStatus: connection.webhook_status,\n    businessAccountId: connection.business_account_id || null,\n    wabaId: connection.waba_id || null,\n    phoneNumberId: connection.phone_number_id || null,\n    displayPhoneNumber: connection.display_phone_number || null,\n    verifiedName: connection.verified_name || null,\n    lastError: connection.last_error || null,\n    actionRequiredReason:\n      connection.operational_status === \"action_required\"\n        ? connection.last_event_code || null\n        : null,\n    lastEvent:\n      connection.last_event_code || connection.last_event_message || connection.last_error\n        ? {\n            code: connection.last_event_code || \"whatsapp_unknown\",\n            message:\n              connection.last_event_message ||\n              connection.last_error ||\n              \"Evento operacional do WhatsApp.\",\n            severity: buildSeverity(\n              connection.operational_status,\n              connection.verification_status,\n              connection.last_error || null\n            ),\n            occurredAt: connection.last_event_at || null,\n          }\n        : null,\n  };\n}\n\n\nreturn items.map((item) => {\n  const connection = item.json.connection || item.json.body?.[0] || null;\n  if (!connection?.id) {\n    return {\n      json: {\n        error: \"Nenhuma conexão WhatsApp encontrada para esta clínica.\",\n        statusCode: 404,\n      },\n    };\n  }\n\n  return {\n    json: serializeConnection(connection),\n  };\n});\n"
+      }
+    },
+    {
+      "id": "be5e0563-898f-4682-ae2e-56c144d7c8d8",
+      "name": "Respond Complete Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.3,
+      "position": [
+        -1180,
+        760
+      ],
+      "parameters": {
+        "options": {
+          "responseCode": "={{ $json.statusCode || 400 }}"
+        },
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      }
+    },
+    {
+      "id": "b67319e0-86ec-43b6-9905-cdf39da2f738",
+      "name": "Respond Complete Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.3,
+      "position": [
+        380,
+        440
+      ],
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        },
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      }
+    },
+    {
+      "id": "6298c668-783e-46d4-a66b-11f31475ce43",
+      "name": "Webhook - Meta Ingest",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1840,
+        1520
+      ],
+      "webhookId": "d64702bb-8444-4f5f-94de-c4dcb8bfa44a",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp/meta/webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "d77c32ba-8b73-4133-876b-b4c7b29816e7",
+      "name": "Respond Meta Ingest",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.3,
+      "position": [
+        -1620,
+        1520
+      ],
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        },
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      }
     },
     {
       "parameters": {
@@ -136,11 +942,14 @@
           "maxIterations": 4
         }
       },
-      "id": "c3e9259e-af5f-456f-90fe-d1ddac0aab4b",
+      "id": "0770258c-2a52-4a52-91c1-8063d3e9bc36",
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
-      "position": [-432, 512]
+      "position": [
+        980,
+        660
+      ]
     },
     {
       "parameters": {
@@ -149,11 +958,14 @@
           "temperature": 0.4
         }
       },
-      "id": "2670e376-ac6d-40e1-8fdf-f3b4707e7801",
+      "id": "e851e578-0a2c-4f96-a63c-12995034942d",
       "name": "Google Gemini Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
-      "position": [-432, 736],
+      "position": [
+        980,
+        900
+      ],
       "credentials": {
         "googlePalmApi": {
           "id": "5bshqxgEMV0mUNs6",
@@ -167,194 +979,426 @@
         "sessionKey": "={{ $('Webhook').first().json.body.clinicId + ':' + ($('Webhook').first().json.body.connectionId ?? 'default') + ':' + $('Webhook').first().json.body.contactWaId }}",
         "contextWindowLength": 16
       },
-      "id": "2049c1a9-ca4e-4d1f-a9f7-630a5c77a2c4",
+      "id": "991930a1-7a41-42dd-ad9a-fa3afe98f316",
       "name": "Simple Memory",
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.3,
-      "position": [-304, 736]
-    },
-    {
-      "parameters": {
-        "fields": {
-          "values": [
-            {
-              "name": "replyText",
-              "stringValue": "={{ (($json.output || '').trim()) || 'Desculpe, não consegui gerar uma resposta agora.' }}"
-            },
-            {
-              "name": "clinicId",
-              "stringValue": "={{ $('Montar Contexto').first().json.clinicId }}"
-            },
-            {
-              "name": "assistantName",
-              "stringValue": "={{ $('Montar Contexto').first().json.assistantName }}"
-            },
-            {
-              "name": "contactWaId",
-              "stringValue": "={{ $('Webhook').first().json.body.contactWaId ?? '' }}"
-            },
-            {
-              "name": "connectionId",
-              "stringValue": "={{ $('Webhook').first().json.body.connectionId ?? '' }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "63659be1-82a6-42d1-aee8-76d642d26de0",
-      "name": "Estruturar Saída",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3,
-      "position": [-144, 512]
-    },
-    {
-      "parameters": {
-        "options": {
-          "responseCode": 200
-        }
-      },
-      "id": "cbc9501e-3769-4ef4-bde7-10559992f179",
-      "name": "Responder ao WhatsApp",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [16, 512]
-    },
-    {
-      "parameters": {
-        "fields": {
-          "values": [
-            {
-              "name": "replyText",
-              "stringValue": "Desculpe, não consegui processar sua mensagem no momento."
-            },
-            {
-              "name": "error",
-              "type": "booleanValue"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "8a0c236e-e85e-4b95-bc58-723bb9ae0f21",
-      "name": "Erro de Validação",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3,
-      "position": [-864, 752]
-    },
-    {
-      "parameters": {
-        "options": {
-          "responseCode": 400
-        }
-      },
-      "id": "c3c4ce8e-7fb5-4280-9d38-3e7ba45fb594",
-      "name": "Responder Erro",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [-640, 752]
+      "position": [
+        1140,
+        900
+      ]
     }
   ],
   "connections": {
-    "Webhook": {
+    "Webhook - Start Embedded Signup": {
       "main": [
         [
           {
-            "node": "Validar Payload",
+            "node": "Normalize Start Request",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Validar Payload": {
+    "Normalize Start Request": {
       "main": [
         [
           {
-            "node": "Buscar Clínica",
+            "node": "Start Request Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Request Valid?": {
+      "main": [
+        [
+          {
+            "node": "Resolve Start Access",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Erro de Validação",
+            "node": "Respond Start Error",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Buscar Clínica": {
+    "Resolve Start Access": {
       "main": [
         [
           {
-            "node": "Montar Contexto",
+            "node": "Start Access OK?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Montar Contexto": {
+    "Start Access OK?": {
       "main": [
         [
           {
-            "node": "AI Agent",
+            "node": "Get Start Connection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Start Error",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Google Gemini Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Simple Memory": {
-      "ai_memory": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_memory",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "AI Agent": {
+    "Get Start Connection": {
       "main": [
         [
           {
-            "node": "Estruturar Saída",
+            "node": "Ensure Start Connection",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Estruturar Saída": {
+    "Ensure Start Connection": {
       "main": [
         [
           {
-            "node": "Responder ao WhatsApp",
+            "node": "Start Needs Create?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Erro de Validação": {
+    "Start Needs Create?": {
       "main": [
         [
           {
-            "node": "Responder Erro",
+            "node": "Create Start Connection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Start Session Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Start Connection": {
+      "main": [
+        [
+          {
+            "node": "Prepare Start Session Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Start Session Response": {
+      "main": [
+        [
+          {
+            "node": "Start Session Prepared?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Session Prepared?": {
+      "main": [
+        [
+          {
+            "node": "Respond Start Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Start Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Connection Status": {
+      "main": [
+        [
+          {
+            "node": "Normalize Status Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Status Request": {
+      "main": [
+        [
+          {
+            "node": "Status Request Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Request Valid?": {
+      "main": [
+        [
+          {
+            "node": "Resolve Status Access",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Status Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Status Access": {
+      "main": [
+        [
+          {
+            "node": "Status Access OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Access OK?": {
+      "main": [
+        [
+          {
+            "node": "Get Status Connection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Status Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Status Connection": {
+      "main": [
+        [
+          {
+            "node": "Serialize Status Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serialize Status Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Status Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Complete Embedded Signup": {
+      "main": [
+        [
+          {
+            "node": "Normalize Complete Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Complete Request": {
+      "main": [
+        [
+          {
+            "node": "Complete Request Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete Request Valid?": {
+      "main": [
+        [
+          {
+            "node": "Get Complete Connection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Complete Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Complete Connection": {
+      "main": [
+        [
+          {
+            "node": "Prepare Complete Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Complete Context": {
+      "main": [
+        [
+          {
+            "node": "Complete Context OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete Context OK?": {
+      "main": [
+        [
+          {
+            "node": "Resolve Complete Access",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Complete Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Complete Access": {
+      "main": [
+        [
+          {
+            "node": "Complete Access OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete Access OK?": {
+      "main": [
+        [
+          {
+            "node": "Exchange Complete Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Complete Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Exchange Complete Token": {
+      "main": [
+        [
+          {
+            "node": "Finalize Complete Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Complete Response": {
+      "main": [
+        [
+          {
+            "node": "Persist Complete Credentials",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Complete Credentials": {
+      "main": [
+        [
+          {
+            "node": "Persist Complete Connection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Complete Connection": {
+      "main": [
+        [
+          {
+            "node": "Serialize Complete Persisted Connection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serialize Complete Persisted Connection": {
+      "main": [
+        [
+          {
+            "node": "Respond Complete Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Meta Ingest": {
+      "main": [
+        [
+          {
+            "node": "Respond Meta Ingest",
             "type": "main",
             "index": 0
           }
@@ -363,14 +1407,13 @@
     }
   },
   "settings": {
-    "executionOrder": "v1",
-    "binaryMode": "separate"
+    "executionOrder": "v1"
   },
   "staticData": null,
   "pinData": {},
-  "versionId": "7609e766-ab35-4eee-8c8a-32c945c0bea1",
-  "activeVersionId": "7609e766-ab35-4eee-8c8a-32c945c0bea1",
-  "versionCounter": 32,
-  "triggerCount": 1,
+  "versionId": "4e83413c-03bf-4ca7-8a84-8822b034aaf9",
+  "activeVersionId": "8aa6fc8f-0060-4b4a-a5f9-946e425304d7",
+  "versionCounter": 1,
+  "triggerCount": 5,
   "tags": []
 }

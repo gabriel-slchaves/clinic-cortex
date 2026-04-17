@@ -20,7 +20,7 @@ function deriveInternalServiceOriginFromWindow() {
   const { protocol, hostname } = window.location;
 
   if (hostname === "app.localhost") {
-    return "http://localhost:3001";
+    return "";
   }
 
   if (
