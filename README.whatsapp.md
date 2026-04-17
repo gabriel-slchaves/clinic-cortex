@@ -1,315 +1,162 @@
-# WhatsApp Cloud API Runbook
+# WhatsApp Cloud API via n8n + team-service
 
-## Topologia suportada
+## Arquitetura atual
 
-- landing pública: `https://cliniccortex.com.br` e `https://www.cliniccortex.com.br`
-- app autenticado: `https://app.cliniccortex.com.br`
-- conector e webhook da Meta: `https://wa.cliniccortex.com.br`
-- homolog: `https://app-hml.cliniccortex.com.br` e `https://wa-hml.cliniccortex.com.br`
-- callback do Embedded Signup: `https://app.cliniccortex.com.br/integrations/whatsapp/meta/callback`
-- webhook oficial: `https://wa.cliniccortex.com.br/whatsapp/meta/webhook`
+- `frontend -> wa.* -> n8n` para as rotas de WhatsApp.
+- `frontend -> team.* / /api/team -> team-service` para autenticação/membership e rotas de equipe.
+- `Supabase` continua como fonte de verdade para:
+  - `whatsapp_connections`
+  - `whatsapp_connection_credentials`
+  - `whatsapp_webhook_events`
+  - `whatsapp_messages`
+  - `whatsapp_message_status_events`
 
-O front foi ajustado para esse modelo. Em produção ele resolve o serviço interno de duas formas:
+O conector Node antigo de WhatsApp foi removido do runtime do projeto. O host `wa.*` agora deve apontar para o `n8n`.
 
-- principal: `VITE_INTERNAL_SERVICE_ORIGIN=https://wa.cliniccortex.com.br`
-- fallback controlado: se a aplicação estiver em `app.cliniccortex.com.br` ou `app-hml.cliniccortex.com.br`, ela consegue derivar `wa.*` apenas como contingência
+## Serviços do stack
 
-## Convenção de ambientes
+- app local: `http://localhost:3000`
+- n8n local: `http://localhost:5678`
+- team-service local: `http://localhost:3002`
 
-- `local`
-  - app: `http://app.localhost:3000`
-  - landing: `http://localhost:3000`
-  - conector: `http://localhost:3001`
-  - compose: [docker-compose.yml](C:/Users/Usuário/Desktop/cliniccortex/docker-compose.yml)
-  - env file: `.env.local`
-- `homolog`
-  - app: `https://app-hml.cliniccortex.com.br`
-  - conector: `https://wa-hml.cliniccortex.com.br`
-  - compose: [docker-compose.homolog.yml](C:/Users/Usuário/Desktop/cliniccortex/docker-compose.homolog.yml)
-  - env file: `.env.homolog`
-- `production`
-  - app: `https://app.cliniccortex.com.br`
-  - conector: `https://wa.cliniccortex.com.br`
-  - compose: [docker-compose.production.yml](C:/Users/Usuário/Desktop/cliniccortex/docker-compose.production.yml)
-  - env file: `.env.production`
+O `team-service` ainda é obrigatório no stack atual. Ele atende a área de equipe/plano no app e valida, para o `n8n`, se o usuário autenticado pode consultar ou gerenciar a conexão WhatsApp da clínica.
 
-Os arquivos `.env.local`, `.env.homolog` e `.env.production` foram criados na raiz do projeto e substituem o antigo `.env.example`.
-O arquivo `.env` deixou de ser fonte de verdade operacional.
+Proxy local:
 
-## Pré-condições
+- `/api/whatsapp/* -> http://n8n:5678/webhook/whatsapp/*`
+- `/api/team/* -> http://team-service:3002/team/*`
 
-1. A ClinicCortex precisa ter acesso administrativo ao Business Manager que será dono do app integrador.
-2. A migration [20260409_200000_meta_cloud_api_whatsapp.sql](C:/Users/Usuário/Desktop/cliniccortex/supabase/migrations/20260409_200000_meta_cloud_api_whatsapp.sql) precisa estar aplicada.
-3. O domínio precisa permitir os dois subdomínios públicos:
-   - `app.cliniccortex.com.br` na Vercel
-   - `wa.cliniccortex.com.br` no VPS
+Proxy público:
 
-## Variáveis obrigatórias
+- `wa.* /whatsapp/* -> n8n`
+- `wa.* /team/* -> team-service`
 
-Preencha e ajuste o arquivo do ambiente correspondente:
+## Variáveis de ambiente
 
-- `APP_ENV=production`
-- `VITE_APP_ENV=production`
+Frontend:
+
+- `VITE_PUBLIC_LANDING_ORIGIN`
+- `VITE_PUBLIC_APP_ORIGIN`
+- `VITE_INTERNAL_SERVICE_ORIGIN`
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+
+n8n / Meta:
+
+- `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `VITE_PUBLIC_LANDING_ORIGIN=https://cliniccortex.com.br`
-- `VITE_PUBLIC_APP_ORIGIN=https://app.cliniccortex.com.br`
-- `VITE_INTERNAL_SERVICE_ORIGIN=https://wa.cliniccortex.com.br`
-- `PUBLIC_APP_ORIGIN=https://app.cliniccortex.com.br`
-- `PUBLIC_WA_ORIGIN=https://wa.cliniccortex.com.br`
-- `WA_PUBLIC_HOSTNAME=wa.cliniccortex.com.br`
-- `ACME_EMAIL=<email-operacional>`
 - `META_APP_ID`
 - `META_APP_SECRET`
+- `META_GRAPH_VERSION`
 - `META_EMBEDDED_SIGNUP_CONFIG_ID`
-- `META_EMBEDDED_SIGNUP_REDIRECT_URI=https://app.cliniccortex.com.br/integrations/whatsapp/meta/callback`
+- `META_EMBEDDED_SIGNUP_REDIRECT_URI`
+- `META_EMBEDDED_SIGNUP_SCOPES`
 - `META_WEBHOOK_VERIFY_TOKEN`
 - `META_WEBHOOK_APP_SECRET`
 - `WHATSAPP_TOKEN_ENCRYPTION_KEY`
+- `TEAM_SERVICE_INTERNAL_URL`
+- `NODE_FUNCTION_ALLOW_BUILTIN=crypto`
 
-Geradores úteis:
+team-service:
 
-- `pnpm whatsapp:generate-encryption-key`
-- `pnpm whatsapp:generate-verify-token`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `TEAM_SERVICE_PORT`
+- `TEAM_SERVICE_LOG_LEVEL`
 
-Regra operacional:
+## Arquivos principais
 
-- `META_WEBHOOK_APP_SECRET` deve usar o mesmo segredo lógico do App Secret da Meta, a menos que você tenha um motivo forte para separar a configuração.
-- `WHATSAPP_TOKEN_ENCRYPTION_KEY` precisa ser uma chave base64 de 32 bytes estável; trocar esse valor invalida a leitura dos tokens já cifrados no banco.
-- o conector não faz mais autoload de `.env`; ele lê apenas `process.env`
+- workflow n8n: [workflow.json](C:/Users/Usuário/Desktop/cliniccortex/workflow.json)
+- gerador do workflow: [generate-whatsapp-n8n-workflow.mjs](C:/Users/Usuário/Desktop/cliniccortex/scripts/generate-whatsapp-n8n-workflow.mjs)
+- migration Meta base: [20260409_200000_meta_cloud_api_whatsapp.sql](C:/Users/Usuário/Desktop/cliniccortex/supabase/migrations/20260409_200000_meta_cloud_api_whatsapp.sql)
+- migration de fila/retry: [20260414_000000_n8n_whatsapp_queue.sql](C:/Users/Usuário/Desktop/cliniccortex/supabase/migrations/20260414_000000_n8n_whatsapp_queue.sql)
+- backend de equipe/auth helper: [team-service/src/index.ts](C:/Users/Usuário/Desktop/cliniccortex/team-service/src/index.ts)
 
-## DNS e Vercel
+## Comandos
 
-1. Mantenha a landing pública em um projeto separado da Vercel para:
-   - `cliniccortex.com.br`
-   - `www.cliniccortex.com.br`
-2. Mantenha o app autenticado em outro projeto da Vercel para:
-   - `app.cliniccortex.com.br`
-   - `app-hml.cliniccortex.com.br`
-3. Crie no DNS:
-   - `wa.cliniccortex.com.br`
-   - `wa-hml.cliniccortex.com.br`
-4. No projeto Vercel do app, configure:
-   - `VITE_APP_ENV`
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_PUBLIC_LANDING_ORIGIN`
-   - `VITE_PUBLIC_APP_ORIGIN`
-   - `VITE_INTERNAL_SERVICE_ORIGIN`
-5. Não é necessário rewrite da Vercel para `/api/whatsapp` se `VITE_INTERNAL_SERVICE_ORIGIN` estiver preenchido.
+- gerar workflow n8n:
+  - `pnpm workflow:generate`
+- sincronizar workflow no n8n local/homolog/produção:
+  - `pnpm workflow:sync:local`
+  - `pnpm workflow:sync:homolog`
+  - `pnpm workflow:sync:production`
+- probe rápido dos endpoints publicados:
+  - `pnpm workflow:probe:local`
+  - `pnpm workflow:probe:homolog`
+  - `pnpm workflow:probe:production`
+
+Os comandos `workflow:sync:*` pressupõem acesso Docker ao host que roda o `n8n` daquele ambiente.
+
+O probe local só deve ficar totalmente verde quando `n8n` e `team-service` estiverem de pé. Se `team-service health` falhar, o onboarding pelo app também falhará nos nós `Resolve Start Access`, `Resolve Status Access` ou `Resolve Complete Access`.
+- validar `team-service`:
+  - `pnpm check:team`
+- subir stack local:
+  - `pnpm stack:local`
+- subir stack homolog:
+  - `pnpm stack:homolog`
+- subir stack produção:
+  - `pnpm stack:production`
+
+## Estado da migração
+
+Concluído no repositório:
+
+- frontend passou a apontar o WhatsApp para o n8n
+- compose local/homolog/produção não executam mais conector dedicado de WhatsApp
+- `team-service` extraído para preservar rotas `/team/*`
+- helper interno `POST /team/internal/auth/resolve` criado para o n8n validar sessão e permissão da clínica
+- envs limpas do legado Baileys / connector Node
+- `workflow.json` agora é gerado a partir de um bundle n8n-only
+
+Escopo atual do workflow gerado:
+
+- `POST /whatsapp/connections/onboarding/session`
+- `GET /whatsapp/connections/status?clinicId=...`
+- `POST /whatsapp/connections/onboarding/complete`
+- `GET /whatsapp/meta/webhook`
+- `POST /whatsapp/meta/webhook`
 
 Observação importante:
 
-- o callback do Embedded Signup é uma rota SPA já existente em [WhatsAppMetaCallback.tsx](C:/Users/Usuário/Desktop/cliniccortex/src/pages/WhatsAppMetaCallback.tsx)
-- o host autenticado do produto deve permanecer em `app.cliniccortex.com.br` ou `app-hml.cliniccortex.com.br`
-- a lógica em [appOrigin.ts](C:/Users/Usuário/Desktop/cliniccortex/src/lib/appOrigin.ts) agora usa env explícita como fonte principal e só recorre a inferência como fallback
+- o `n8n` não resolve `:clinicId` e `:connectionId` no path do webhook como um router Express faria
+- por isso as rotas operacionais do app foram normalizadas para paths estáticos com `clinicId` e `connectionId` em query/body
+- o shape das respostas do frontend foi mantido
 
-## Publicação HTTPS do webhook
+Antes do cutover final ainda falta endurecer no workflow do n8n:
 
-O arquivo [docker-compose.production.yml](C:/Users/Usuário/Desktop/cliniccortex/docker-compose.production.yml) foi ajustado para o stack de produção com:
+- validação de assinatura no `POST /whatsapp/meta/webhook`
+- processamento inbound/outbound completo via Graph API
+- persistência de `whatsapp_webhook_events` e `whatsapp_message_status_events` no fluxo do webhook
 
-- `wa-proxy` em Caddy com TLS automático
-- `whatsapp-connector` exposto apenas em `127.0.0.1:3001`
-- `n8n` exposto apenas em `127.0.0.1:5678`
+## Deploy
 
-O proxy TLS usa [docker/Caddyfile](C:/Users/Usuário/Desktop/cliniccortex/docker/Caddyfile) e publica:
+Homolog:
 
-- `GET /whatsapp/meta/webhook`
-- `POST /whatsapp/meta/webhook`
-- `/whatsapp/*`
-- `/team/*`
-- `/health`
+- app: `https://app-hml.cliniccortex.com.br`
+- wa: `https://wa-hml.cliniccortex.com.br`
 
-No VPS:
+Produção:
 
-1. copie o `.env` preenchido para a raiz do projeto
-2. suba o stack:
-   ```bash
-   docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
-   ```
-3. valide localmente no VPS:
-   ```bash
-   curl http://127.0.0.1:3001/health
-   ```
-4. valide publicamente:
-   ```bash
-   curl https://wa.cliniccortex.com.br/health
-   ```
+- app: `https://app.cliniccortex.com.br`
+- wa: `https://wa.cliniccortex.com.br`
 
-Critério de aceite:
+O `n8n` deve receber:
 
-- `https://wa.cliniccortex.com.br/health` retorna `{"ok":true}`
-- a emissão do certificado TLS ocorre sem intervenção manual
+- `WEBHOOK_URL=https://wa-hml.cliniccortex.com.br/` em homolog
+- `WEBHOOK_URL=https://wa.cliniccortex.com.br/` em produção
 
-Antes do onboarding real, rode o preflight do ambiente:
+## Observação operacional
+
+`workflow.json` é tratado como artefato exportável/importável do n8n. Sempre que o gerador mudar, rode:
 
 ```bash
-pnpm whatsapp:preflight:homolog
+pnpm workflow:generate
 ```
 
-Depois que `wa-hml.cliniccortex.com.br` estiver público e o conector estiver de pé, valide os endpoints externos:
+Para um teste local mínimo, use esta sequência:
 
 ```bash
-pnpm whatsapp:probe:homolog
+pnpm stack:local
+pnpm workflow:sync:local
+pnpm workflow:probe:local
 ```
-
-## Configuração do app da Meta
-
-No Meta for Developers:
-
-1. crie um app do tipo `Business`
-2. vincule o app ao Business Manager da ClinicCortex
-3. adicione o produto `WhatsApp`
-4. configure o webhook do produto com:
-   - callback URL: `https://wa.cliniccortex.com.br/whatsapp/meta/webhook`
-   - verify token: valor idêntico a `META_WEBHOOK_VERIFY_TOKEN`
-5. crie a configuração do Embedded Signup e copie o `config_id`
-6. registre como redirect URI permitida:
-   - `https://app.cliniccortex.com.br/integrations/whatsapp/meta/callback`
-7. confirme os escopos:
-   - `business_management`
-   - `whatsapp_business_management`
-   - `whatsapp_business_messaging`
-
-## Onboarding real
-
-1. abra a aplicação em `https://app.cliniccortex.com.br`
-2. entre com um usuário que tenha acesso de gestão à clínica
-3. vá até a etapa 7 do onboarding ou abra a modal de integração nas configurações
-4. clique em `Conectar com Meta`
-5. conclua o Embedded Signup com um número oficial válido
-6. aguarde o retorno para `https://app.cliniccortex.com.br/integrations/whatsapp/meta/callback`
-
-Validação de banco após o onboarding:
-
-```sql
-select
-  id,
-  clinic_id,
-  provider,
-  operational_status,
-  onboarding_status,
-  verification_status,
-  webhook_status,
-  business_account_id,
-  waba_id,
-  phone_number_id,
-  display_phone_number,
-  verified_name
-from public.whatsapp_connections
-order by updated_at desc
-limit 10;
-```
-
-Resultado esperado:
-
-- `provider = 'meta_cloud_api'`
-- `operational_status = 'active'`
-- `webhook_status = 'subscribed'`
-- `waba_id` preenchido
-- `phone_number_id` preenchido
-- `display_phone_number` preenchido
-
-Verifique também a presença de token cifrado:
-
-```sql
-select
-  connection_id,
-  token_obtained_at,
-  token_expires_at,
-  revoked_at
-from public.whatsapp_connection_credentials
-order by token_obtained_at desc
-limit 10;
-```
-
-## Teste ponta a ponta
-
-1. envie uma mensagem de um número externo para o número oficial conectado
-2. confirme o recebimento do webhook:
-   ```sql
-   select
-     id,
-     event_kind,
-     processing_status,
-     received_at
-   from public.whatsapp_webhook_events
-   order by received_at desc
-   limit 20;
-   ```
-3. confirme a persistência da mensagem:
-   ```sql
-   select
-     id,
-     connection_id,
-     from_me,
-     contact_wa_id,
-     provider_message_id,
-     provider_message_status,
-     text_body,
-     created_at
-   from public.whatsapp_messages
-   order by created_at desc
-   limit 20;
-   ```
-4. confirme a atualização de status:
-   ```sql
-   select
-     provider_message_id,
-     status,
-     occurred_at
-   from public.whatsapp_message_status_events
-   order by occurred_at desc
-   limit 20;
-   ```
-
-Critério de aceite:
-
-- inbound chega em `whatsapp_webhook_events`
-- inbound cria `whatsapp_messages` com `from_me = false`
-- o n8n recebe `contactWaId`
-- o outbound cria `whatsapp_messages` com `from_me = true`
-- os eventos de `sent`, `delivered` e `read` chegam via webhook oficial quando disponíveis
-
-## Falhas esperadas
-
-- sem acesso ao Business Manager da ClinicCortex, o setup do app para no painel da Meta
-- sem `wa.cliniccortex.com.br` público e com TLS válido, a verificação do webhook falha
-- sem `META_WEBHOOK_VERIFY_TOKEN` igual ao configurado na Meta, o `GET /whatsapp/meta/webhook` não valida
-- sem `WHATSAPP_TOKEN_ENCRYPTION_KEY`, o conector não consegue persistir credenciais oficiais com segurança
-- sem `VITE_PUBLIC_APP_ORIGIN`, `VITE_PUBLIC_LANDING_ORIGIN` e `VITE_INTERNAL_SERVICE_ORIGIN`, o frontend volta a depender de fallback e pode apontar para a origem errada em produção
-
-## Serviço
-
-- endpoint interno do conector: `http://127.0.0.1:3001`
-- webhook oficial da Meta: `https://wa.cliniccortex.com.br/whatsapp/meta/webhook`
-- frontend de produção: `https://app.cliniccortex.com.br`
-
-## Comandos rápidos
-
-- local:
-  - `pnpm stack:local`
-  - `pnpm whatsapp:dev`
-  - `pnpm whatsapp:start:local`
-  - `pnpm whatsapp:preflight:local`
-- homolog:
-  - `pnpm stack:homolog`
-  - `pnpm build:homolog`
-  - `pnpm whatsapp:start:homolog`
-  - `pnpm whatsapp:preflight:homolog`
-  - `pnpm whatsapp:probe:homolog`
-- produção:
-  - `pnpm stack:production`
-  - `pnpm build:production`
-  - `pnpm whatsapp:start:production`
-  - `pnpm whatsapp:preflight:production`
-  - `pnpm whatsapp:probe:production`
-
-## Execução direta do conector
-
-- `pnpm whatsapp:start` continua existindo apenas para runtime com variáveis já injetadas pelo processo ou pelo container
-- para execução manual fora do Docker, use sempre:
-  - `pnpm whatsapp:start:local`
-  - `pnpm whatsapp:start:homolog`
-  - `pnpm whatsapp:start:production`

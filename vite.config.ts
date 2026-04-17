@@ -31,12 +31,13 @@ export default defineConfig({
     },
     proxy: {
       "/api/whatsapp": {
-        target: process.env.WHATSAPP_API_PROXY_TARGET || "http://localhost:3001",
+        target: process.env.WHATSAPP_API_PROXY_TARGET || "http://localhost:5678",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/whatsapp/, "/whatsapp"),
+        rewrite: (path) =>
+          path.replace(/^\/api\/whatsapp/, "/webhook/whatsapp"),
       },
       "/api/team": {
-        target: process.env.WHATSAPP_API_PROXY_TARGET || "http://localhost:3001",
+        target: process.env.TEAM_API_PROXY_TARGET || "http://localhost:3002",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/team/, "/team"),
       },
@@ -45,6 +46,7 @@ export default defineConfig({
       "localhost",
       "127.0.0.1",
       ".localhost",
+      "local.cliniccortex.com.br",
     ],
     fs: {
       strict: true,
@@ -65,7 +67,7 @@ export default defineConfig({
         "**/coverage/**",
         "**/docker/**",
         "**/supabase/**",
-        "**/whatsapp-service/**",
+        "**/team-service/**",
         "**/*.log",
       ],
     },

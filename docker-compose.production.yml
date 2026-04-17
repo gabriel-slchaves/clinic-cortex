@@ -5,7 +5,8 @@ services:
     container_name: cliniccortex-wa-proxy-prod
     image: caddy:2.10-alpine
     depends_on:
-      - whatsapp-connector
+      - n8n
+      - team-service
     ports:
       - "${WA_PROXY_HTTP_PORT:-80}:80"
       - "${WA_PROXY_HTTPS_PORT:-443}:443"
@@ -27,35 +28,10 @@ services:
       N8N_HOST: ${N8N_HOST:-n8n}
       N8N_PORT: 5678
       N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
-      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://n8n:5678/}
-      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
-      TZ: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
-    restart: unless-stopped
-    volumes:
-      - n8n_data_prod:/home/node/.n8n
-
-  whatsapp-connector:
-    container_name: cliniccortex-whatsapp-prod
-    build:
-      context: .
-      dockerfile: whatsapp-service/Dockerfile
-      target: runtime
-    depends_on:
-      - n8n
-    ports:
-      - "127.0.0.1:${WHATSAPP_SERVICE_PORT:-3001}:3001"
-    environment:
-      APP_ENV: ${APP_ENV:-production}
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-https://wa.cliniccortex.com.br/}
       SUPABASE_URL: ${VITE_SUPABASE_URL}
       SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN}
-      PUBLIC_WA_ORIGIN: ${PUBLIC_WA_ORIGIN}
-      WHATSAPP_SERVICE_PORT: 3001
-      N8N_MESSAGE_WEBHOOK_URL: ${N8N_MESSAGE_WEBHOOK_URL:-http://n8n:5678/webhook/cliniccortex-whatsapp}
-      N8N_MESSAGE_WEBHOOK_TIMEOUT_MS: ${N8N_MESSAGE_WEBHOOK_TIMEOUT_MS:-15000}
-      N8N_MESSAGE_WEBHOOK_SECRET: ${N8N_MESSAGE_WEBHOOK_SECRET:-}
-      WHATSAPP_LOG_LEVEL: ${WHATSAPP_LOG_LEVEL:-info}
       META_APP_ID: ${META_APP_ID}
       META_APP_SECRET: ${META_APP_SECRET}
       META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v23.0}
@@ -64,8 +40,30 @@ services:
       META_EMBEDDED_SIGNUP_SCOPES: ${META_EMBEDDED_SIGNUP_SCOPES:-business_management,whatsapp_business_management,whatsapp_business_messaging}
       META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN}
       META_WEBHOOK_APP_SECRET: ${META_WEBHOOK_APP_SECRET}
-      META_HEALTHCHECK_INTERVAL_MS: ${META_HEALTHCHECK_INTERVAL_MS:-300000}
       WHATSAPP_TOKEN_ENCRYPTION_KEY: ${WHATSAPP_TOKEN_ENCRYPTION_KEY}
+      TEAM_SERVICE_INTERNAL_URL: ${TEAM_SERVICE_INTERNAL_URL:-http://team-service:3002}
+      NODE_FUNCTION_ALLOW_BUILTIN: ${NODE_FUNCTION_ALLOW_BUILTIN:-crypto,node:crypto}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: ${N8N_BLOCK_ENV_ACCESS_IN_NODE:-false}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
+      TZ: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
+    restart: unless-stopped
+    volumes:
+      - n8n_data_prod:/home/node/.n8n
+
+  team-service:
+    container_name: cliniccortex-team-prod
+    build:
+      context: .
+      dockerfile: team-service/Dockerfile
+      target: runtime
+    ports:
+      - "127.0.0.1:${TEAM_SERVICE_PORT:-3002}:3002"
+    environment:
+      SUPABASE_URL: ${VITE_SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN}
+      TEAM_SERVICE_PORT: 3002
+      TEAM_SERVICE_LOG_LEVEL: ${TEAM_SERVICE_LOG_LEVEL:-info}
     restart: unless-stopped
 
 volumes:
