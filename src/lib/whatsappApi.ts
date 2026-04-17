@@ -1,6 +1,9 @@
 import { supabase } from "@/lib/supabase";
 import { getInternalServiceUrl } from "@/lib/internalServiceOrigin";
 
+const WHATSAPP_START_PUBLIC_ERROR =
+  "Não foi possível iniciar a conexão oficial do WhatsApp agora. Tente novamente ou acione o suporte.";
+
 export type WhatsAppOperationalStatus =
   | "not_connected"
   | "onboarding"
@@ -51,12 +54,16 @@ export type WhatsAppConnectionResponse = {
 };
 
 export type WhatsAppOnboardingSessionResponse = {
+  ok?: true;
   connection: WhatsAppConnectionResponse;
   state: string;
   redirectUri: string;
   launchUrl: string;
   appId: string;
   configId: string;
+  graphVersion?: string;
+  scopes?: string[];
+  extras?: Record<string, unknown>;
 };
 
 export type CompleteEmbeddedSignupInput = {
@@ -77,11 +84,23 @@ export type CompleteEmbeddedSignupInput = {
 export class WhatsAppApiError extends Error {
   constructor(
     message: string,
-    public readonly status: number
+    public readonly status: number,
+    public readonly diagnostic?: unknown
   ) {
     super(message);
     this.name = "WhatsAppApiError";
   }
+}
+
+function getPayloadShape(value: unknown) {
+  if (Array.isArray(value)) return "array";
+  if (value === null) return "null";
+  return typeof value;
+}
+
+function getPayloadKeys(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.keys(value as Record<string, unknown>).sort();
 }
 
 async function getAuthHeaders() {
@@ -113,54 +132,129 @@ async function request<T>(path: string, init?: RequestInit) {
     });
   } catch {
     throw new WhatsAppApiError(
-      "Serviço oficial de conexão WhatsApp indisponível. Verifique se o conector interno está ativo e configurado corretamente.",
+      WHATSAPP_START_PUBLIC_ERROR,
       503
     );
   }
 
   const raw = await response.text();
-  const payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+  let payload: Record<string, unknown> = {};
 
-  if (!response.ok) {
+  try {
+    payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+  } catch {
     throw new WhatsAppApiError(
-      String(payload.error || "Falha ao comunicar com o serviço WhatsApp."),
-      response.status
+      WHATSAPP_START_PUBLIC_ERROR,
+      502,
+      {
+        errorCode: "whatsapp_backend_invalid_json",
+        rawPayloadType: typeof raw,
+        rawPayloadPreview: raw.slice(0, 400),
+      }
+    );
+  }
+
+  if (!response.ok || payload.ok === false) {
+    if (response.status === 404) {
+      throw new WhatsAppApiError(
+        WHATSAPP_START_PUBLIC_ERROR,
+        404,
+        payload
+      );
+    }
+
+    throw new WhatsAppApiError(
+      String(payload.publicMessage || payload.error || WHATSAPP_START_PUBLIC_ERROR),
+      Number(payload.statusCode || response.status || 500),
+      payload
     );
   }
 
   return payload as T;
 }
 
-export function createWhatsAppConnection(clinicId: string) {
-  return request<WhatsAppConnectionResponse>("/connections", {
-    method: "POST",
-    body: JSON.stringify({ clinicId }),
-  });
+function cleanRequiredString(
+  payload: Record<string, unknown>,
+  key: string,
+  missingFields: string[]
+) {
+  const value = payload[key];
+  if (typeof value === "string" && value.trim()) return value.trim();
+  missingFields.push(key);
+  return "";
 }
 
-export function getWhatsAppConnectionByClinic(clinicId: string) {
-  return request<WhatsAppConnectionResponse>(
-    `/connections/by-clinic/${encodeURIComponent(clinicId)}`
+function assertWhatsAppOnboardingSessionResponse(
+  payload: WhatsAppOnboardingSessionResponse
+) {
+  const raw = payload as unknown as Record<string, unknown>;
+  const missingFields: string[] = [];
+  const payloadKeys = getPayloadKeys(raw);
+
+  const backendMessage = [
+    raw.publicMessage,
+    raw.error,
+    raw.message,
+  ].find(
+    (value): value is string =>
+      typeof value === "string" && value.trim().length > 0
   );
+
+  if (backendMessage) {
+    throw new WhatsAppApiError(
+      backendMessage,
+      Number(
+        typeof raw.statusCode === "number" ? raw.statusCode : 502
+      ),
+      {
+        ...raw,
+        payloadKeys,
+        rawPayloadType: getPayloadShape(payload),
+      }
+    );
+  }
+
+  cleanRequiredString(raw, "appId", missingFields);
+  cleanRequiredString(raw, "configId", missingFields);
+  cleanRequiredString(raw, "state", missingFields);
+  cleanRequiredString(raw, "redirectUri", missingFields);
+  cleanRequiredString(raw, "launchUrl", missingFields);
+
+  if (!payload.connection?.connectionId) {
+    missingFields.push("connection.connectionId");
+  }
+
+  if (missingFields.length) {
+    throw new WhatsAppApiError(WHATSAPP_START_PUBLIC_ERROR, 502, {
+      errorCode: "meta_embedded_signup_session_invalid",
+      missingFields,
+      payloadKeys,
+      rawPayloadType: getPayloadShape(payload),
+    });
+  }
+
+  return payload;
 }
 
 export function getWhatsAppConnectionStatusByClinic(clinicId: string) {
   return request<WhatsAppConnectionResponse>(
-    `/connections/by-clinic/${encodeURIComponent(clinicId)}/status`
+    `/connections/status?clinicId=${encodeURIComponent(clinicId)}`
   );
 }
 
-export function createWhatsAppEmbeddedSignupSessionByClinic(
+export async function createWhatsAppEmbeddedSignupSessionByClinic(
   clinicId: string,
   clinicName?: string | null
 ) {
-  return request<WhatsAppOnboardingSessionResponse>(
-    `/connections/by-clinic/${encodeURIComponent(clinicId)}/onboarding/session`,
+  const payload = await request<WhatsAppOnboardingSessionResponse>(
+    `/connections/onboarding/session`,
     {
       method: "POST",
-      body: JSON.stringify({ clinicName: clinicName ?? null }),
+      body: JSON.stringify({ clinicId, clinicName: clinicName ?? null }),
     }
   );
+
+  return assertWhatsAppOnboardingSessionResponse(payload);
 }
 
 export function completeWhatsAppEmbeddedSignup(
@@ -168,10 +262,13 @@ export function completeWhatsAppEmbeddedSignup(
   payload: CompleteEmbeddedSignupInput
 ) {
   return request<WhatsAppConnectionResponse>(
-    `/connections/${encodeURIComponent(connectionId)}/onboarding/complete`,
+    `/connections/onboarding/complete`,
     {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        connectionId,
+        ...payload,
+      }),
     }
   );
 }

@@ -10,8 +10,23 @@
 		format console
 	}
 
-	@connector path /health /whatsapp/* /team/*
-	reverse_proxy @connector whatsapp-connector:3001
+	@health path /health
+	reverse_proxy @health team-service:3002
+
+	@team path /team/*
+	reverse_proxy @team team-service:3002
+
+	@metaWebhookVerify {
+		method GET
+		path /whatsapp/meta/webhook
+	}
+	reverse_proxy @metaWebhookVerify team-service:3002
+
+	@whatsapp path /whatsapp/*
+	handle @whatsapp {
+		uri replace /whatsapp /webhook/whatsapp
+		reverse_proxy n8n:5678
+	}
 
 	respond 404
 }
