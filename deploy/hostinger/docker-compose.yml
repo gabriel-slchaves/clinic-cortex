@@ -1,0 +1,73 @@
+name: ${STACK_NAME:-cliniccortex-hostinger}
+
+services:
+  proxy:
+    container_name: cliniccortex-wa-proxy-${COMPOSE_SUFFIX:-hml}
+    image: caddy:2.10-alpine
+    depends_on:
+      team-service:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
+    env_file:
+      - ./env/${DEPLOY_ENV:-homolog}/proxy${ENV_FILE_SUFFIX:-.env.example}
+    ports:
+      - "${WA_PROXY_HTTP_PORT:-80}:80"
+      - "${WA_PROXY_HTTPS_PORT:-443}:443"
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- --header \"Host: $$WA_PUBLIC_HOSTNAME\" http://127.0.0.1/health/proxy >/dev/null || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  n8n:
+    container_name: cliniccortex-n8n-${COMPOSE_SUFFIX:-hml}
+    image: n8nio/n8n:latest
+    env_file:
+      - ./env/${DEPLOY_ENV:-homolog}/n8n${ENV_FILE_SUFFIX:-.env.example}
+    ports:
+      - "127.0.0.1:${N8N_HOST_PORT:-5678}:5678"
+    restart: unless-stopped
+    volumes:
+      - n8n_data:/home/node/.n8n
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  team-service:
+    container_name: cliniccortex-team-${COMPOSE_SUFFIX:-hml}
+    build:
+      context: ../..
+      dockerfile: team-service/Dockerfile
+      target: runtime
+    env_file:
+      - ./env/${DEPLOY_ENV:-homolog}/team-service${ENV_FILE_SUFFIX:-.env.example}
+    ports:
+      - "127.0.0.1:${TEAM_SERVICE_HOST_PORT:-3002}:3002"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  caddy_data:
+  caddy_config:
+  n8n_data:

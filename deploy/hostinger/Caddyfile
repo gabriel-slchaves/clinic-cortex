@@ -1,0 +1,48 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+{$WA_PUBLIC_HOSTNAME} {
+	encode zstd gzip
+
+	log {
+		output stdout
+		format json
+	}
+
+	@proxyHealth path /health/proxy
+	respond @proxyHealth "ok" 200
+
+	@teamHealth path /health/team
+	handle @teamHealth {
+		uri replace /health/team /health
+		reverse_proxy team-service:3002
+	}
+
+	@n8nHealth path /health/n8n
+	handle @n8nHealth {
+		uri replace /health/n8n /healthz
+		reverse_proxy n8n:5678
+	}
+
+	@health path /health
+	reverse_proxy @health team-service:3002
+
+	@team path /team/*
+	reverse_proxy @team team-service:3002
+
+	@metaWebhookVerify {
+		method GET
+		path /whatsapp/meta/webhook
+	}
+	reverse_proxy @metaWebhookVerify team-service:3002
+
+	@whatsapp path /whatsapp/*
+	handle @whatsapp {
+		uri replace /whatsapp /webhook/whatsapp
+		reverse_proxy n8n:5678
+	}
+
+	respond 404
+}
