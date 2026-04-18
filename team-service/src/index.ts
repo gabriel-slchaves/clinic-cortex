@@ -6,74 +6,39 @@ import {
 import pino from "pino";
 import { config } from "./config.js";
 import { HttpError } from "./errors.js";
+import {
+  readJsonBody,
+  readRawBody,
+  sendJson,
+  sendNoContent,
+  sendText,
+} from "./http/responses.js";
+import { resolveClinicAccess } from "./modules/auth/clinicAccess.js";
+import {
+  createWhatsAppService,
+  extractSignatureHeader,
+} from "./modules/whatsapp/service.js";
 import { TeamRepository } from "./supabase/TeamRepository.js";
+import { WhatsAppRepository } from "./supabase/WhatsAppRepository.js";
 
 const logger = pino({ level: config.logLevel });
 
-const repository = new TeamRepository({
+const teamRepository = new TeamRepository({
   supabaseUrl: config.supabaseUrl,
   supabaseServiceRoleKey: config.supabaseServiceRoleKey,
   logger: logger.child({ scope: "team-service" }),
 });
 
-function withCorsHeaders(headers: Record<string, string> = {}) {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
-    ...headers,
-  };
-}
+const whatsappRepository = new WhatsAppRepository({
+  supabaseUrl: config.supabaseUrl,
+  supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+});
 
-function sendJson(
-  response: ServerResponse,
-  statusCode: number,
-  payload: Record<string, unknown>
-) {
-  response.writeHead(
-    statusCode,
-    withCorsHeaders({
-      "Content-Type": "application/json; charset=utf-8",
-    })
-  );
-  response.end(JSON.stringify(payload));
-}
-
-function sendText(response: ServerResponse, statusCode: number, body: string) {
-  response.writeHead(
-    statusCode,
-    withCorsHeaders({
-      "Content-Type": "text/plain; charset=utf-8",
-    })
-  );
-  response.end(body);
-}
-
-function sendNoContent(response: ServerResponse) {
-  response.writeHead(204, withCorsHeaders());
-  response.end();
-}
-
-async function readRawBody(request: IncomingMessage) {
-  const chunks: Buffer[] = [];
-
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-async function readJsonBody<T>(request: IncomingMessage) {
-  const raw = await readRawBody(request);
-  if (!raw.trim()) return {} as T;
-
-  try {
-    return JSON.parse(raw) as T;
-  } catch (error) {
-    throw new HttpError(400, "Corpo JSON inválido.", error);
-  }
-}
+const whatsappService = createWhatsAppService({
+  repository: whatsappRepository,
+  teamRepository,
+  logger: logger.child({ scope: "whatsapp" }),
+});
 
 async function authenticate(request: IncomingMessage) {
   const authorization = request.headers.authorization || "";
@@ -86,7 +51,7 @@ async function authenticate(request: IncomingMessage) {
     throw new HttpError(401, "Token de sessão não informado.");
   }
 
-  return repository.authenticateAccessToken(accessToken);
+  return teamRepository.authenticateAccessToken(accessToken);
 }
 
 async function handleTeamRoutes(
@@ -102,7 +67,7 @@ async function handleTeamRoutes(
       throw new HttpError(400, "clinicId é obrigatório.");
     }
 
-    const payload = await repository.listAvailablePlans(clinicId, userId);
+    const payload = await teamRepository.listAvailablePlans(clinicId, userId);
     sendJson(response, 200, payload);
     return true;
   }
@@ -115,7 +80,7 @@ async function handleTeamRoutes(
     }
 
     const body = await readJsonBody<{ planId?: string }>(request);
-    const updated = await repository.updateClinicPlan(
+    const updated = await teamRepository.updateClinicPlan(
       clinicId,
       userId,
       String(body.planId || "")
@@ -132,7 +97,7 @@ async function handleTeamRoutes(
       throw new HttpError(400, "clinicId é obrigatório.");
     }
 
-    const payload = await repository.listClinicMembers(clinicId, userId);
+    const payload = await teamRepository.listClinicMembers(clinicId, userId);
     sendJson(response, 200, payload);
     return true;
   }
@@ -152,7 +117,7 @@ async function handleTeamRoutes(
       licenseCode?: string | null;
     }>(request);
 
-    const created = await repository.createClinicMember(clinicId, userId, {
+    const created = await teamRepository.createClinicMember(clinicId, userId, {
       fullName: String(body.fullName || ""),
       email: String(body.email || ""),
       accessLevel: body.accessLevel || "doctor",
@@ -183,7 +148,7 @@ async function handleTeamRoutes(
       licenseCode?: string | null;
     }>(request);
 
-    const updated = await repository.updateClinicMember(
+    const updated = await teamRepository.updateClinicMember(
       clinicId,
       memberId,
       userId,
@@ -213,27 +178,13 @@ async function handleInternalAuthResolve(
   }>(request);
 
   try {
-    const user = await authenticate(request);
-    const clinicId = String(body.clinicId || "").trim() || null;
-
-    if (!clinicId) {
-      sendJson(response, 200, {
-        ok: true,
-        userId: user.id,
-      });
-      return true;
-    }
-
-    const membership = body.requireManage
-      ? await repository.ensureClinicPlanAccess(user.id, clinicId)
-      : await repository.ensureClinicAccess(user.id, clinicId);
-
-    sendJson(response, 200, {
-      ok: true,
-      userId: user.id,
-      clinicId,
-      membership,
+    const access = await resolveClinicAccess(teamRepository, {
+      authorizationHeader: request.headers.authorization,
+      clinicId: body.clinicId ?? null,
+      requireManage: body.requireManage,
     });
+
+    sendJson(response, 200, access);
     return true;
   } catch (error) {
     const statusCode = error instanceof HttpError ? error.statusCode : 500;
@@ -249,6 +200,118 @@ async function handleInternalAuthResolve(
     });
     return true;
   }
+}
+
+async function handleWhatsAppRoutes(
+  request: IncomingMessage,
+  response: ServerResponse,
+  pathname: string,
+  url: URL
+) {
+  if (
+    request.method === "POST" &&
+    pathname === "/whatsapp/connections/onboarding/session"
+  ) {
+    const body = await readJsonBody<{
+      clinicId?: string | null;
+      clinicName?: string | null;
+    }>(request);
+    const payload = await whatsappService.startOnboardingSession({
+      authorizationHeader: request.headers.authorization,
+      clinicId: body.clinicId ?? null,
+      clinicName: body.clinicName ?? null,
+    });
+    sendJson(response, 200, payload);
+    return true;
+  }
+
+  if (request.method === "GET" && pathname === "/whatsapp/connections/status") {
+    const payload = await whatsappService.getConnectionStatus({
+      authorizationHeader: request.headers.authorization,
+      clinicId: url.searchParams.get("clinicId"),
+    });
+    sendJson(response, 200, payload);
+    return true;
+  }
+
+  if (
+    request.method === "POST" &&
+    pathname === "/whatsapp/connections/onboarding/complete"
+  ) {
+    const body = await readJsonBody<{
+      connectionId?: string | null;
+      state?: string | null;
+      authorizationCode?: string | null;
+      accessToken?: string | null;
+      businessAccountId?: string | null;
+      wabaId?: string | null;
+      phoneNumberId?: string | null;
+      displayPhoneNumber?: string | null;
+      verifiedName?: string | null;
+      grantedScopes?: string[] | null;
+      metadata?: Record<string, unknown> | null;
+      tokenExpiresAt?: string | null;
+      tokenExpiresInSeconds?: number | null;
+    }>(request);
+
+    const payload = await whatsappService.completeOnboarding({
+      authorizationHeader: request.headers.authorization,
+      ...body,
+    });
+    sendJson(response, 200, payload);
+    return true;
+  }
+
+  if (request.method === "GET" && pathname === "/whatsapp/meta/webhook") {
+    const challenge = whatsappService.verifyWebhookHandshake(url.searchParams);
+    sendText(response, 200, challenge);
+    return true;
+  }
+
+  if (request.method === "POST" && pathname === "/whatsapp/meta/webhook") {
+    const rawBody = await readRawBody(request);
+    const payload = await whatsappService.ingestWebhook(
+      rawBody,
+      extractSignatureHeader(request.headers)
+    );
+    sendJson(response, 200, payload);
+    return true;
+  }
+
+  if (request.method === "POST" && pathname === "/whatsapp/_drain") {
+    const payload = await whatsappService.drainWebhookQueue({
+      authorizationHeader: request.headers.authorization,
+      batchSize: Number(url.searchParams.get("batchSize") || 0) || null,
+    });
+    sendJson(response, 200, payload);
+    return true;
+  }
+
+  if (request.method === "POST" && pathname === "/whatsapp/agent/_drain") {
+    const payload = await whatsappService.drainConversationQueue({
+      authorizationHeader: request.headers.authorization,
+      batchSize: Number(url.searchParams.get("batchSize") || 0) || null,
+    });
+    sendJson(response, 200, payload);
+    return true;
+  }
+
+  if (request.method === "POST" && pathname === "/whatsapp/messages/send") {
+    const body = await readJsonBody<{
+      sourceMessageId?: string | null;
+      originJobId?: string | null;
+      agentRunId?: string | null;
+      text?: string | null;
+    }>(request);
+    const payload = await whatsappService.sendMessage({
+      authorizationHeader: request.headers.authorization,
+      ...body,
+    });
+    sendJson(response, 200, { ok: true, message: payload });
+    return true;
+  }
+
+  return false;
 }
 
 async function handleRequest(
@@ -268,32 +331,26 @@ async function handleRequest(
   const pathname = url.pathname;
 
   if (request.method === "GET" && pathname === "/health") {
-    sendJson(response, 200, { ok: true });
-    return;
-  }
-
-  if (request.method === "GET" && pathname === "/whatsapp/meta/webhook") {
-    const mode = String(url.searchParams.get("hub.mode") || "").trim();
-    const token = String(url.searchParams.get("hub.verify_token") || "").trim();
-    const challenge = String(url.searchParams.get("hub.challenge") || "").trim();
-
-    if (mode !== "subscribe" || !challenge) {
-      sendText(response, 400, "Parâmetros de verificação inválidos.");
-      return;
-    }
-
-    if (!config.metaWebhookVerifyToken || token !== config.metaWebhookVerifyToken) {
-      sendText(response, 403, "Webhook da Meta não autorizado.");
-      return;
-    }
-
-    sendText(response, 200, challenge);
+    sendJson(response, 200, {
+      ok: true,
+      service: "team-service",
+      whatsapp: {
+        workersEnabled: config.whatsappEnableWorkers,
+        agentEnabled: config.whatsappEnableAgent,
+      },
+    });
     return;
   }
 
   if (request.method === "POST" && pathname === "/team/internal/auth/resolve") {
     await handleInternalAuthResolve(request, response);
     return;
+  }
+
+  if (pathname.startsWith("/whatsapp/")) {
+    const handled = await handleWhatsAppRoutes(request, response, pathname, url);
+    if (handled) return;
+    throw new HttpError(404, "Endpoint não encontrado.");
   }
 
   if (!pathname.startsWith("/team/")) {
@@ -331,13 +388,20 @@ async function main() {
 
       sendJson(response, statusCode, {
         error: message,
+        statusCode,
       });
     }
   });
 
   server.listen(config.port, () => {
     logger.info(
-      { port: config.port },
+      {
+        port: config.port,
+        environment: config.appEnvironment,
+        publicWaOrigin: config.publicWaOrigin || null,
+        whatsappWorkersEnabled: config.whatsappEnableWorkers,
+        whatsappAgentEnabled: config.whatsappEnableAgent,
+      },
       "Clinic team service listening"
     );
   });

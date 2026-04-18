@@ -3,7 +3,7 @@
 Este runbook cobre apenas a linha operacional atual:
 
 - WhatsApp oficial em `n8n`
-- `team-service` em Node
+- `team-service` em Node, já contendo a implementação própria do WhatsApp em modo interno
 - Supabase como Auth/DB/Storage
 - sem Edge Functions no runtime
 
@@ -47,6 +47,17 @@ O compose operacional fica no próprio repositório em:
 - `GET http://127.0.0.1:5678/healthz`
   - health direto do `n8n` no host
 
+## Observação sobre a transição do WhatsApp
+
+Nesta fase, o `team-service` já pode conter a implementação Node das rotas `/whatsapp/*`, webhook, filas e agent processor. Mesmo assim, o roteamento público continua em `n8n` até que a nova implementação esteja validada em `homolog`.
+
+Regras desta etapa:
+
+- `wa.* /whatsapp/* -> n8n` continua sendo o caminho público
+- o runtime Node do WhatsApp é validado direto no `team-service`
+- `WHATSAPP_ENABLE_WORKERS=false` e `WHATSAPP_ENABLE_AGENT=false` por padrão até a homolog ficar verde
+- o cutover para `team-service` só acontece depois de paridade funcional comprovada
+
 ## Ordem recomendada de subida em staging (homolog)
 
 1. Acessar a VPS e clonar a branch ativa:
@@ -55,7 +66,7 @@ O compose operacional fica no próprio repositório em:
    cd /opt/cliniccortex
    git clone <repo-url> repo
    cd repo
-   git switch codex/hostinger-vps-n8n-only
+   git switch homolog
    ```
 
 2. Preparar o diretório de deploy:
@@ -98,6 +109,12 @@ O compose operacional fica no próprio repositório em:
    ```bash
    curl -f http://127.0.0.1:3002/health
    curl -f http://127.0.0.1:5678/healthz
+   ```
+
+   Se a implementação Node do WhatsApp já estiver configurada em homolog, validar também:
+
+   ```bash
+   curl -f "http://127.0.0.1:3002/whatsapp/meta/webhook?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=test"
    ```
 
 7. Sincronizar o workflow do WhatsApp no `n8n`:
@@ -168,6 +185,8 @@ Nenhuma mudança de contrato é necessária.
 - `/whatsapp/connections/status` responde pelo host `wa-*`
 - `/whatsapp/connections/onboarding/session` responde pelo host `wa-*`
 - `/whatsapp/connections/onboarding/complete` responde pelo host `wa-*`
+- `POST http://127.0.0.1:3002/whatsapp/_drain` só é usado internamente, nunca como endpoint público
+- `POST http://127.0.0.1:3002/whatsapp/agent/_drain` só é usado internamente, nunca como endpoint público
 
 ### Fluxo de aplicação
 
@@ -185,6 +204,9 @@ Nenhuma mudança de contrato é necessária.
 - inbound real não retorna `404/500`
 - outbound real usa o mesmo contrato `/whatsapp/*`
 - nenhum request do app tenta chamar Edge Function
+- quando a implementação Node estiver sendo validada, `POST /whatsapp/meta/webhook` no `team-service` aceita payload assinado e enfileira eventos no Supabase
+- workers só são ativados com `WHATSAPP_ENABLE_WORKERS=true`
+- agent só é ativado com `WHATSAPP_ENABLE_AGENT=true`
 
 ### Logs e rollback
 

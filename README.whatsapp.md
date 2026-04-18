@@ -4,6 +4,7 @@
 
 - `frontend -> wa.* -> n8n` para as rotas de WhatsApp.
 - `frontend -> team.* / /api/team -> team-service` para autenticação/membership e rotas de equipe.
+- `team-service` agora também contém a implementação Node própria de `/whatsapp/*`, webhook, filas e agent logic, mas ela ainda fica fora do caminho público até o cutover.
 - `Supabase` continua como fonte de verdade para:
   - `whatsapp_connections`
   - `whatsapp_connection_credentials`
@@ -11,7 +12,7 @@
   - `whatsapp_messages`
   - `whatsapp_message_status_events`
 
-O conector Node antigo de WhatsApp foi removido do runtime do projeto. O host `wa.*` agora deve apontar para o `n8n`.
+O host `wa.*` continua apontando para o `n8n` nesta fase. A implementação Node no `team-service` serve para consolidar o backend e substituir o runtime provisório depois da validação em `homolog`.
 
 ## Serviços do stack
 
@@ -63,6 +64,24 @@ team-service:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `TEAM_SERVICE_PORT`
 - `TEAM_SERVICE_LOG_LEVEL`
+- `PUBLIC_APP_ORIGIN`
+- `PUBLIC_WA_ORIGIN`
+- `META_APP_ID`
+- `META_APP_SECRET`
+- `META_GRAPH_VERSION`
+- `META_EMBEDDED_SIGNUP_CONFIG_ID`
+- `META_EMBEDDED_SIGNUP_REDIRECT_URI`
+- `META_EMBEDDED_SIGNUP_SCOPES`
+- `META_WEBHOOK_VERIFY_TOKEN`
+- `META_WEBHOOK_APP_SECRET`
+- `WHATSAPP_TOKEN_ENCRYPTION_KEY`
+- `WHATSAPP_ENABLE_WORKERS`
+- `WHATSAPP_ENABLE_AGENT`
+- `WHATSAPP_DRAIN_TOKEN`
+- `WHATSAPP_DRAIN_BATCH_SIZE`
+- `WHATSAPP_AGENT_HISTORY_LIMIT`
+- `WHATSAPP_AGENT_MODEL`
+- `GEMINI_API_KEY`
 
 ## Arquivos principais
 
@@ -70,6 +89,7 @@ team-service:
 - gerador do workflow: [generate-whatsapp-n8n-workflow.mjs](C:/Users/Usuário/Desktop/cliniccortex/scripts/generate-whatsapp-n8n-workflow.mjs)
 - migration Meta base: [20260409_200000_meta_cloud_api_whatsapp.sql](C:/Users/Usuário/Desktop/cliniccortex/supabase/migrations/20260409_200000_meta_cloud_api_whatsapp.sql)
 - migration de fila/retry: [20260414_000000_n8n_whatsapp_queue.sql](C:/Users/Usuário/Desktop/cliniccortex/supabase/migrations/20260414_000000_n8n_whatsapp_queue.sql)
+- migration de jobs/agente: [20260417_210000_whatsapp_agent_jobs.sql](C:/Users/Usuário/Desktop/cliniccortex/supabase/migrations/20260417_210000_whatsapp_agent_jobs.sql)
 - backend de equipe/auth helper: [team-service/src/index.ts](C:/Users/Usuário/Desktop/cliniccortex/team-service/src/index.ts)
 
 ## Comandos
@@ -107,6 +127,8 @@ Concluído no repositório:
 - helper interno `POST /team/internal/auth/resolve` criado para o n8n validar sessão e permissão da clínica
 - envs limpas do legado Baileys / connector Node
 - `workflow.json` agora é gerado a partir de um bundle n8n-only
+- lógica útil da trilha Edge começou a ser portada para Node dentro do `team-service`
+- `team-service` já implementa `/whatsapp/*`, `POST /whatsapp/meta/webhook`, filas e agent processor atrás de flags
 
 Escopo atual do workflow gerado:
 
@@ -124,9 +146,9 @@ Observação importante:
 
 Antes do cutover final ainda falta endurecer no workflow do n8n:
 
-- validação de assinatura no `POST /whatsapp/meta/webhook`
-- processamento inbound/outbound completo via Graph API
-- persistência de `whatsapp_webhook_events` e `whatsapp_message_status_events` no fluxo do webhook
+- validar em `homolog` a implementação Node do `team-service` usando os mesmos contratos públicos
+- ativar workers/agent por env e comparar o resultado operacional
+- trocar o proxy público de `/whatsapp/*` do `n8n` para o `team-service`
 
 ## Deploy
 
