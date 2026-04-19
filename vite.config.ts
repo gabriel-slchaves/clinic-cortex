@@ -31,10 +31,10 @@ export default defineConfig({
     },
     proxy: {
       "/api/whatsapp": {
-        target: process.env.WHATSAPP_API_PROXY_TARGET || "http://localhost:5678",
+        target:
+          process.env.WHATSAPP_API_PROXY_TARGET || "http://localhost:3002",
         changeOrigin: true,
-        rewrite: (path) =>
-          path.replace(/^\/api\/whatsapp/, "/webhook/whatsapp"),
+        rewrite: (path) => path.replace(/^\/api\/whatsapp/, "/whatsapp"),
       },
       "/api/team": {
         target: process.env.TEAM_API_PROXY_TARGET || "http://localhost:3002",

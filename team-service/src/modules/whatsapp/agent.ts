@@ -1,5 +1,6 @@
 import type pino from "pino";
 import { HttpError } from "../../errors.js";
+import { GeminiClient } from "../../integrations/llm/GeminiClient.js";
 import { MetaCrypto } from "../../integrations/meta/MetaCrypto.js";
 import { MetaGraphClient } from "../../integrations/meta/MetaGraphClient.js";
 import {
@@ -12,7 +13,7 @@ import {
   type ConversationJobRow,
   type WhatsAppMessageRow,
 } from "./shared.js";
-import { WhatsAppRepository } from "../../supabase/WhatsAppRepository.js";
+import { WhatsAppRepository } from "../../repositories/supabase/WhatsAppRepository.js";
 
 type TeamServiceLogger = Pick<pino.Logger, "warn" | "error">;
 
@@ -254,34 +255,20 @@ async function callGeminiForDecision(
     },
   } as Record<string, JsonValue>;
 
-  const response = await deps.fetchFn(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(deps.agentModel)}:generateContent?key=${encodeURIComponent(deps.geminiApiKey)}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestPayload),
-    }
-  );
-
-  const rawBody = await response.text();
   let parsedBody: Record<string, unknown> = {};
   try {
-    parsedBody = rawBody
-      ? (JSON.parse(rawBody) as Record<string, unknown>)
-      : {};
-  } catch {
-    parsedBody = {
-      rawText: rawBody,
-    };
-  }
-
-  if (!response.ok) {
+    const geminiClient = new GeminiClient(deps.geminiApiKey, deps.fetchFn);
+    parsedBody = await geminiClient.generateContent(
+      deps.agentModel,
+      requestPayload
+    );
+  } catch (error) {
     throw new HttpError(
       502,
       "O provider Gemini não retornou uma decisão válida para o WhatsApp.",
-      parsedBody
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
     );
   }
 

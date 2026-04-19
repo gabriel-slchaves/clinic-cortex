@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import type pino from "pino";
 import { config } from "../../config.js";
 import { HttpError } from "../../errors.js";
-import type { TeamRepository } from "../../supabase/TeamRepository.js";
 import {
   type VerificationStatus,
   MetaGraphClient,
@@ -27,7 +26,8 @@ import {
   type WebhookEventRow,
   type WhatsAppMessageRow,
 } from "./shared.js";
-import { WhatsAppRepository } from "../../supabase/WhatsAppRepository.js";
+import { WhatsAppRepository } from "../../repositories/supabase/WhatsAppRepository.js";
+import { TeamRepository } from "../../repositories/supabase/TeamRepository.js";
 
 type TeamServiceLogger = pino.Logger;
 

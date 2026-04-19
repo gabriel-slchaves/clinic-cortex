@@ -46,8 +46,16 @@ function parseEnvFile(filePath) {
 }
 
 const env = parseEnvFile(envFile);
+const firstNonEmpty = (...values) =>
+  values
+    .map(value => String(value || "").trim())
+    .find(Boolean) || "";
 const n8nPort = String(env.N8N_PORT || "5678").trim();
-const internalOrigin = String(env.VITE_INTERNAL_SERVICE_ORIGIN || "").trim();
+const internalOrigin = firstNonEmpty(
+  env.VITE_INTERNAL_SERVICE_ORIGIN,
+  env.PUBLIC_WA_ORIGIN,
+  env.WA_PUBLIC_HOSTNAME ? `https://${env.WA_PUBLIC_HOSTNAME}` : ""
+);
 const localLoopback = "127.0.0.1";
 const directBase = `http://${localLoopback}:${n8nPort}`;
 const webhookBase =

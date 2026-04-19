@@ -32,17 +32,8 @@
 	@team path /team/*
 	reverse_proxy @team team-service:3002
 
-	@metaWebhookVerify {
-		method GET
-		path /whatsapp/meta/webhook
-	}
-	reverse_proxy @metaWebhookVerify team-service:3002
-
 	@whatsapp path /whatsapp/*
-	handle @whatsapp {
-		uri replace /whatsapp /webhook/whatsapp
-		reverse_proxy n8n:5678
-	}
+	reverse_proxy @whatsapp team-service:3002
 
 	respond 404
 }

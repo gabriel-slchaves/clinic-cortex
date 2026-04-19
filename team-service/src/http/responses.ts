@@ -14,12 +14,14 @@ export function withCorsHeaders(headers: Record<string, string> = {}) {
 export function sendJson(
   response: ServerResponse,
   statusCode: number,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  headers: Record<string, string> = {}
 ) {
   response.writeHead(
     statusCode,
     withCorsHeaders({
       "Content-Type": "application/json; charset=utf-8",
+      ...headers,
     })
   );
   response.end(JSON.stringify(payload));
@@ -28,19 +30,24 @@ export function sendJson(
 export function sendText(
   response: ServerResponse,
   statusCode: number,
-  body: string
+  body: string,
+  headers: Record<string, string> = {}
 ) {
   response.writeHead(
     statusCode,
     withCorsHeaders({
       "Content-Type": "text/plain; charset=utf-8",
+      ...headers,
     })
   );
   response.end(body);
 }
 
-export function sendNoContent(response: ServerResponse) {
-  response.writeHead(204, withCorsHeaders());
+export function sendNoContent(
+  response: ServerResponse,
+  headers: Record<string, string> = {}
+) {
+  response.writeHead(204, withCorsHeaders(headers));
   response.end();
 }
 
