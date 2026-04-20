@@ -1,4 +1,4 @@
-# Hostinger VPS: backend integrado Node com `n8n` opcional
+# Hostinger VPS: backend integrado Node sem `n8n` no stack operacional
 
 Este runbook cobre a linha operacional atual:
 
@@ -6,7 +6,7 @@ Este runbook cobre a linha operacional atual:
 - `team-service` em Node como backend integrado
 - Supabase como Auth/DB/Storage
 - sem Edge Functions no runtime
-- `n8n` apenas como fallback curto ou automacao auxiliar opcional
+- sem `n8n` no stack operacional da VPS
 
 ## Estrutura sugerida na VPS
 
@@ -31,6 +31,19 @@ O compose operacional fica no proprio repositorio em:
 - `deploy/hostinger/docker-compose.yml`
 - `deploy/hostinger/Caddyfile`
 
+## Stack canonico da VPS
+
+Na VPS, homolog e producao devem usar somente:
+
+- `deploy/hostinger/docker-compose.yml`
+- `deploy/hostinger/Caddyfile`
+
+Os arquivos abaixo ficam fora do runbook da VPS:
+
+- `docker-compose.homolog.yml`
+- `docker-compose.production.yml`
+- `docker/Caddyfile`
+
 ## Endpoints de health expostos
 
 - `GET /health`
@@ -39,12 +52,8 @@ O compose operacional fica no proprio repositorio em:
   - confirma que o Caddy respondeu
 - `GET /health/team`
   - confirma que o proxy alcanca o `team-service`
-- `GET /health/n8n`
-  - confirma que o proxy alcanca o `n8n`, se ele ainda estiver presente
 - `GET http://127.0.0.1:3002/health`
   - health direto do `team-service` no host
-- `GET http://127.0.0.1:5678/healthz`
-  - health direto do `n8n` no host, se ele ainda estiver de pe
 
 ## Observacao sobre a transicao do WhatsApp
 
@@ -54,9 +63,7 @@ Regras desta etapa:
 
 - `wa.* /whatsapp/* -> team-service`
 - `wa.* /team/* -> team-service`
-- `n8n` fica fora do caminho publico
 - `WHATSAPP_ENABLE_WORKERS` e `WHATSAPP_ENABLE_AGENT` precisam refletir o ambiente real antes do go-live
-- rollback curto continua possivel enquanto o `n8n` ainda existir privado na VPS
 
 ## Politica de branch
 
@@ -92,7 +99,6 @@ Regras desta etapa:
    ACME_EMAIL=infra@cliniccortex.com.br
    WA_PROXY_HTTP_PORT=80
    WA_PROXY_HTTPS_PORT=443
-   N8N_HOST_PORT=5678
    TEAM_SERVICE_HOST_PORT=3002
    ```
 
@@ -117,36 +123,23 @@ Regras desta etapa:
    curl -f "http://127.0.0.1:3002/whatsapp/meta/webhook?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=test"
    ```
 
-7. Se for manter `n8n` privado como fallback, subi-lo separadamente:
-
-   ```bash
-   docker compose --env-file .env.homolog -f deploy/hostinger/docker-compose.yml up -d n8n
-   docker compose --env-file .env.homolog -f deploy/hostinger/docker-compose.yml ps
-   ```
-
-8. Subir o proxy:
+7. Subir o proxy:
 
    ```bash
    docker compose --env-file .env.homolog -f deploy/hostinger/docker-compose.yml up -d proxy
    docker compose --env-file .env.homolog -f deploy/hostinger/docker-compose.yml ps
    ```
 
-9. Validar o proxy ainda na VPS:
+8. Validar o proxy ainda na VPS:
 
    ```bash
-   curl -f -H 'Host: wa-hml.cliniccortex.com.br' http://127.0.0.1/health/proxy
-   curl -f -H 'Host: wa-hml.cliniccortex.com.br' http://127.0.0.1/health/team
+   curl -fk -H 'Host: wa-hml.cliniccortex.com.br' https://127.0.0.1/health/proxy
+   curl -fk -H 'Host: wa-hml.cliniccortex.com.br' https://127.0.0.1/health/team
    ```
 
-   Se o `n8n` ainda estiver presente como fallback:
+9. So depois apontar DNS do host de homolog para a VPS.
 
-   ```bash
-   curl -f -H 'Host: wa-hml.cliniccortex.com.br' http://127.0.0.1/health/n8n
-   ```
-
-10. So depois apontar DNS do host de homolog para a VPS.
-
-11. Com DNS/SSL validos, validar o runtime publico do backend:
+10. Com DNS/SSL validos, validar o runtime publico do backend:
 
    ```bash
    curl -f "https://wa-hml.cliniccortex.com.br/health"
@@ -175,14 +168,13 @@ Nenhuma mudanca de contrato e necessaria.
 
 - `docker compose ps` mostra `proxy` e `team-service` como `healthy`
 - `curl http://127.0.0.1:3002/health` responde `200`
-- `curl -H 'Host: ...' http://127.0.0.1/health/proxy` responde `200`
-- `curl -H 'Host: ...' http://127.0.0.1/health/team` responde `200`
+- `curl -fk -H 'Host: ...' https://127.0.0.1/health/proxy` responde `200`
+- `curl -fk -H 'Host: ...' https://127.0.0.1/health/team` responde `200`
 - SSL do host `wa-*` emite certificado valido
-
-Se o `n8n` estiver mantido como fallback:
-
-- `curl http://127.0.0.1:5678/healthz` responde `200`
-- `curl -H 'Host: ...' http://127.0.0.1/health/n8n` responde `200`
+- `curl -i https://wa-hml.cliniccortex.com.br/` retorna `404`
+- `curl -i https://wa-hml.cliniccortex.com.br/.git/config` retorna `404`
+- `curl -i https://wa-hml.cliniccortex.com.br/.env` retorna `404`
+- `curl -i https://wa-hml.cliniccortex.com.br/wp-config.php` retorna `404`
 
 ### Roteamento e runtime publico
 
@@ -218,9 +210,23 @@ Se o `n8n` estiver mantido como fallback:
 - `docker logs` do `team-service` nao mostram erro de auth/repository
 - `docker logs` do proxy nao mostram loops ou upstream `502`
 - o DNS anterior e os envs atuais de frontend continuam anotados para rollback
-- rollback curto consiste em reapontar `/whatsapp/*` para o `n8n`, se ele ainda estiver de pe
 
-Se o `n8n` ainda existir como fallback:
+## Hardening minimo de host
 
-- `docker logs` do `n8n` nao mostram erro de env ausente
-- o backup do volume do `n8n` foi executado antes da remocao final do servico
+Aplicar na VPS:
+
+```bash
+sudo ufw default deny incoming
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+```
+
+Validar listeners publicos:
+
+```bash
+ss -lntp
+```
+
+Somente `80` e `443` devem estar expostos publicamente pelo compose operacional.

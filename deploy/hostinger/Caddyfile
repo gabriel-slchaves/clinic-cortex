@@ -20,12 +20,6 @@
 		reverse_proxy team-service:3002
 	}
 
-	@n8nHealth path /health/n8n
-	handle @n8nHealth {
-		uri replace /health/n8n /healthz
-		reverse_proxy n8n:5678
-	}
-
 	@health path /health
 	reverse_proxy @health team-service:3002
 

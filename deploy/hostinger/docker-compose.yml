@@ -22,50 +22,12 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget -qO- --header \"Host: $$WA_PUBLIC_HOSTNAME\" http://127.0.0.1/health/proxy >/dev/null || exit 1",
+          "wget -qO- --no-check-certificate --header \"Host: $$WA_PUBLIC_HOSTNAME\" https://127.0.0.1/health/proxy >/dev/null || exit 1",
         ]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 10s
-
-  n8n:
-    container_name: cliniccortex-n8n-${COMPOSE_SUFFIX:-hml}
-    image: n8nio/n8n:latest
-    environment:
-      N8N_HOST: ${N8N_HOST:-n8n}
-      N8N_PORT: 5678
-      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
-      WEBHOOK_URL: ${N8N_WEBHOOK_URL}
-      SUPABASE_URL: ${VITE_SUPABASE_URL}
-      SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      META_APP_ID: ${META_APP_ID}
-      META_APP_SECRET: ${META_APP_SECRET}
-      META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v23.0}
-      META_EMBEDDED_SIGNUP_CONFIG_ID: ${META_EMBEDDED_SIGNUP_CONFIG_ID}
-      META_EMBEDDED_SIGNUP_REDIRECT_URI: ${META_EMBEDDED_SIGNUP_REDIRECT_URI}
-      META_EMBEDDED_SIGNUP_SCOPES: ${META_EMBEDDED_SIGNUP_SCOPES:-business_management,whatsapp_business_management,whatsapp_business_messaging}
-      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN}
-      META_WEBHOOK_APP_SECRET: ${META_WEBHOOK_APP_SECRET}
-      WHATSAPP_TOKEN_ENCRYPTION_KEY: ${WHATSAPP_TOKEN_ENCRYPTION_KEY}
-      TEAM_SERVICE_INTERNAL_URL: ${TEAM_SERVICE_INTERNAL_URL:-http://team-service:3002}
-      NODE_FUNCTION_ALLOW_BUILTIN: ${NODE_FUNCTION_ALLOW_BUILTIN:-crypto,node:crypto}
-      N8N_BLOCK_ENV_ACCESS_IN_NODE: ${N8N_BLOCK_ENV_ACCESS_IN_NODE:-false}
-      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
-      TZ: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
-    ports:
-      - "127.0.0.1:${N8N_HOST_PORT:-5678}:5678"
-    restart: unless-stopped
-    volumes:
-      - n8n_data:/home/node/.n8n
-    healthcheck:
-      test:
-        ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz >/dev/null || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
 
   team-service:
     container_name: cliniccortex-team-${COMPOSE_SUFFIX:-hml}
@@ -111,4 +73,3 @@ services:
 volumes:
   caddy_data:
   caddy_config:
-  n8n_data:

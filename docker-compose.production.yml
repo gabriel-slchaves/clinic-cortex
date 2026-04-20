@@ -1,11 +1,12 @@
 name: cliniccortex-production-stack
 
 services:
-  wa-proxy:
+  proxy:
     container_name: cliniccortex-wa-proxy-prod
     image: caddy:2.10-alpine
     depends_on:
-      - team-service
+      team-service:
+        condition: service_healthy
     ports:
       - "${WA_PROXY_HTTP_PORT:-80}:80"
       - "${WA_PROXY_HTTPS_PORT:-443}:443"
@@ -14,40 +15,19 @@ services:
       ACME_EMAIL: ${ACME_EMAIL:-}
     restart: unless-stopped
     volumes:
-      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/hostinger/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data_prod:/data
       - caddy_config_prod:/config
-
-  n8n:
-    container_name: cliniccortex-n8n-prod
-    image: n8nio/n8n:latest
-    ports:
-      - "127.0.0.1:${N8N_PORT:-5678}:5678"
-    environment:
-      N8N_HOST: ${N8N_HOST:-n8n}
-      N8N_PORT: 5678
-      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
-      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-https://wa.cliniccortex.com.br/}
-      SUPABASE_URL: ${VITE_SUPABASE_URL}
-      SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      META_APP_ID: ${META_APP_ID}
-      META_APP_SECRET: ${META_APP_SECRET}
-      META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v23.0}
-      META_EMBEDDED_SIGNUP_CONFIG_ID: ${META_EMBEDDED_SIGNUP_CONFIG_ID}
-      META_EMBEDDED_SIGNUP_REDIRECT_URI: ${META_EMBEDDED_SIGNUP_REDIRECT_URI}
-      META_EMBEDDED_SIGNUP_SCOPES: ${META_EMBEDDED_SIGNUP_SCOPES:-business_management,whatsapp_business_management,whatsapp_business_messaging}
-      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN}
-      META_WEBHOOK_APP_SECRET: ${META_WEBHOOK_APP_SECRET}
-      WHATSAPP_TOKEN_ENCRYPTION_KEY: ${WHATSAPP_TOKEN_ENCRYPTION_KEY}
-      TEAM_SERVICE_INTERNAL_URL: ${TEAM_SERVICE_INTERNAL_URL:-http://team-service:3002}
-      NODE_FUNCTION_ALLOW_BUILTIN: ${NODE_FUNCTION_ALLOW_BUILTIN:-crypto,node:crypto}
-      N8N_BLOCK_ENV_ACCESS_IN_NODE: ${N8N_BLOCK_ENV_ACCESS_IN_NODE:-false}
-      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
-      TZ: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
-    restart: unless-stopped
-    volumes:
-      - n8n_data_prod:/home/node/.n8n
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- --no-check-certificate --header \"Host: $$WA_PUBLIC_HOSTNAME\" https://127.0.0.1/health/proxy >/dev/null || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   team-service:
     container_name: cliniccortex-team-prod
@@ -82,8 +62,14 @@ services:
       TEAM_SERVICE_PORT: 3002
       TEAM_SERVICE_LOG_LEVEL: ${TEAM_SERVICE_LOG_LEVEL:-info}
     restart: unless-stopped
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
 volumes:
-  n8n_data_prod:
   caddy_data_prod:
   caddy_config_prod:

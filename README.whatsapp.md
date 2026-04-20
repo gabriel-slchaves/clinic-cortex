@@ -14,13 +14,13 @@
   - `whatsapp_conversation_jobs`
   - `whatsapp_agent_runs`
 
-O `n8n` sai do papel de cerebro do fluxo. Se continuar existindo no stack, deve ficar apenas como fallback curto ou automacao auxiliar privada.
+O `n8n` sai do papel de cerebro do fluxo. Na VPS operacional ele nao faz mais parte do stack publico; se continuar existindo, deve viver separado e privado para fluxos legados ou automacao auxiliar.
 
 ## Servicos do stack
 
 - app local: `http://localhost:3000`
 - team-service local: `http://localhost:3002`
-- n8n local: `http://localhost:5678` apenas como fallback opcional
+- stack local suportado: `app` + `team-service`
 
 Proxy local:
 
@@ -86,7 +86,6 @@ Chaves extras de stack para homolog/producao:
 - `ACME_EMAIL`
 - `WA_PROXY_HTTP_PORT`
 - `WA_PROXY_HTTPS_PORT`
-- `N8N_HOST_PORT`
 - `TEAM_SERVICE_HOST_PORT`
 
 Aliases injetados pelo compose no `team-service`:
@@ -96,15 +95,7 @@ Aliases injetados pelo compose no `team-service`:
 - `PUBLIC_APP_ORIGIN`
 - `PUBLIC_WA_ORIGIN`
 
-Aliases injetados pelo compose no `n8n` legado/fallback:
-
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `WEBHOOK_URL`
-- `TEAM_SERVICE_INTERNAL_URL`
-
-Essas envs do `n8n` so continuam relevantes enquanto houver um fallback temporario ou automacoes auxiliares usando o workflow legado.
+As envs do `n8n` so continuam relevantes para execucoes locais ou para um eventual stack privado separado de legado.
 
 ## Arquivos principais
 
@@ -125,10 +116,16 @@ Essas envs do `n8n` so continuam relevantes enquanto houver um fallback temporar
   - `pnpm stack:local`
 - subir stack homolog:
   - `pnpm stack:homolog`
+  - alias para `deploy/hostinger/docker-compose.yml`
 - subir stack producao:
   - `pnpm stack:production`
+  - alias para `deploy/hostinger/docker-compose.yml`
+- subir stack VPS homolog:
+  - `pnpm stack:vps:homolog`
+- subir stack VPS producao:
+  - `pnpm stack:vps:production`
 
-Comandos ligados ao workflow legado do `n8n` continuam disponiveis apenas para fallback e auditoria:
+Comandos ligados ao workflow legado do `n8n` continuam disponiveis apenas para fallback local e auditoria:
 
 - `pnpm workflow:generate`
 - `pnpm workflow:sync:local`
@@ -145,7 +142,7 @@ Concluido no repositorio:
 - `team-service` virou o backend Node integrado que atende `/team/*` e `/whatsapp/*`
 - a maior parte da logica util da trilha Edge foi portada para Node dentro do backend existente
 - o roteamento publico de WhatsApp foi cortado para o backend Node
-- o `n8n` saiu do caminho publico do WhatsApp
+- o `n8n` saiu do caminho publico do WhatsApp e do stack operacional da VPS
 - Edge Functions permanecem fora do runtime
 - o frontend continua usando o mesmo contrato publico
 
@@ -166,11 +163,10 @@ Observacoes importantes:
 - o `n8n` nao deve mais ser tratado como cerebro do fluxo
 - workers e agent continuam controlados por `WHATSAPP_ENABLE_WORKERS` e `WHATSAPP_ENABLE_AGENT`
 
-Antes de remover o `n8n` por completo ainda falta:
+Antes de remover qualquer fluxo legado restante ainda falta:
 
 - validar em `homolog` e producao os workers e o agent do backend Node com credenciais reais
-- garantir rollback curto por troca de proxy enquanto o `n8n` ainda existir
-- decidir se o `n8n` fica privado para automacoes auxiliares ou sai totalmente do stack
+- decidir se o workflow legado do `n8n` continua apenas em ambiente local/privado ou se sera arquivado
 
 ## Deploy
 
@@ -184,11 +180,6 @@ Producao:
 - app: `https://app.cliniccortex.com.br`
 - wa: `https://wa.cliniccortex.com.br`
 
-Se o `n8n` continuar existindo como fallback privado, ele deve receber:
-
-- `WEBHOOK_URL=https://wa-hml.cliniccortex.com.br/` em homolog
-- `WEBHOOK_URL=https://wa.cliniccortex.com.br/` em producao
-
 `workflow.json` passa a ser tratado como artefato legado de fallback/importacao do `n8n`.
 
 Para um teste local minimo do backend integrado, use esta sequencia:
@@ -197,3 +188,12 @@ Para um teste local minimo do backend integrado, use esta sequencia:
 pnpm stack:local
 curl -f http://localhost:3002/health
 ```
+
+Se `docker compose up` falhar com bind em `3002`, valide o dono atual da porta antes de tentar subir o backend Dockerizado:
+
+```powershell
+Get-NetTCPConnection -LocalPort 3002
+Get-CimInstance Win32_Process -Filter "ProcessId = <PID>"
+```
+
+Se o processo for um `node ... team-service/src/index.ts` local, encerre-o antes do `docker compose up`.
